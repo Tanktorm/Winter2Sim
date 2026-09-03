@@ -136,6 +136,14 @@ def manage_service_routes(context, now, vessel=None):
                 alternative = _create_shorter_port_skip_detour(
                     context, source_route, closed_port, event
                 )
+            if (
+                alternative is None
+                and source_route.id.casefold() == "s1"
+                and os.environ.get("WSC_S1_BYPASS", "0") == "1"
+            ):
+                alternative = _create_s1_port_bypass(
+                    context, source_route, closed_port, event
+                )
             if alternative is None:
                 continue
 
@@ -371,6 +379,8 @@ def _create_shorter_port_skip_detour(context, source_route, closed_port, event):
     route._round2_event_key = _port_event_key(closed_port, event)
     route._round2_active = False
     route._round2_source_to_alt = {}
+    route._round2_departure_map = {}
+    route._round2_arrival_map = {}
     route._round2_initial_vessel_count = len(source_route.deployed_vessels)
     route._round2_is_port_skip = True
 
@@ -384,6 +394,69 @@ def _create_shorter_port_skip_detour(context, source_route, closed_port, event):
             new_index,
             new_index,
         )
+        route._round2_departure_map[source_segment.sequence_index] = new_index
+        route._round2_arrival_map[source_segment.sequence_index] = new_index
+    context.service_routes.append(route)
+    return route
+
+
+def _create_s1_port_bypass(context, source_route, closed_port, event):
+    """Build S1's connected cross-ocean bypass while Piraeus is unavailable."""
+    source_segments = sorted(source_route.segments, key=lambda item: item.sequence_index)
+    if closed_port.name.casefold() != "piraeus":
+        return None
+
+    anchors = [
+        (segment.sequence_index, segment.associated_leg.departure_port)
+        for segment in source_segments
+        if segment.associated_leg.departure_port is not closed_port
+    ]
+    blocked_legs = {
+        leg
+        for leg in context.legs
+        if leg.departure_port is closed_port or leg.arrival_port is closed_port
+    }
+    paths = []
+    for index, (source_departure_index, departure_port) in enumerate(anchors):
+        next_source_index, arrival_port = anchors[(index + 1) % len(anchors)]
+        path = _shortest_leg_path(
+            context, departure_port, arrival_port, blocked_legs
+        )
+        if not path:
+            return None
+        previous_source_index = (
+            next_source_index - 1
+            if next_source_index > 1
+            else source_segments[-1].sequence_index
+        )
+        paths.append((source_departure_index, previous_source_index, path))
+
+    route = ServiceRoute(
+        id=f"{source_route.id}-R2-PIRAEUS-BYPASS",
+        name=f"{source_route.name} Round 2 Piraeus Bypass",
+        start_day_of_week=source_route.start_day_of_week,
+    )
+    route.source_service_route = source_route
+    route.disruption_key = ("round2", _port_event_key(closed_port, event))
+    route._round2_source_route = source_route
+    route._round2_event_key = _port_event_key(closed_port, event)
+    route._round2_active = False
+    route._round2_source_to_alt = {}
+    route._round2_departure_map = {}
+    route._round2_arrival_map = {}
+    route._round2_initial_vessel_count = len(source_route.deployed_vessels)
+
+    next_index = 1
+    for source_departure, source_arrival, path in paths:
+        first_index = next_index
+        for leg in path:
+            segment = Segment(next_index, leg, route)
+            route.segments.append(segment)
+            leg.segments.append(segment)
+            context.partial_service_routes.append(segment)
+            next_index += 1
+        route._round2_departure_map[source_departure] = first_index
+        route._round2_arrival_map[source_arrival] = next_index - 1
     context.service_routes.append(route)
     return route
 
@@ -425,6 +498,8 @@ def _create_cycle_preserving_detour(context, source_route, event):
     route._round2_event_key = _event_key(event)
     route._round2_active = False
     route._round2_source_to_alt = {}
+    route._round2_departure_map = {}
+    route._round2_arrival_map = {}
     route._round2_initial_vessel_count = len(source_route.deployed_vessels)
 
     next_index = 1
@@ -440,6 +515,8 @@ def _create_cycle_preserving_detour(context, source_route, event):
             first_index,
             next_index - 1,
         )
+        route._round2_departure_map[source_segment.sequence_index] = first_index
+        route._round2_arrival_map[source_segment.sequence_index] = next_index - 1
 
     context.service_routes.append(route)
     return route
@@ -492,20 +569,21 @@ def _move_route_bookings(source_route, target_route):
         getattr(target_route, "_round2_source_route", None) is source_route
     )
     alternative = target_route if moving_to_alt else source_route
-    source_to_alt = alternative._round2_source_to_alt
+    departure_map = alternative._round2_departure_map
+    arrival_map = alternative._round2_arrival_map
     for booking in list(source_route.associated_bookings):
         if moving_to_alt:
             source_departure = booking.departure_segment_index
             source_arrival = booking.arrival_segment_index
             if (
-                source_departure not in source_to_alt
-                or source_arrival not in source_to_alt
+                source_departure not in departure_map
+                or source_arrival not in arrival_map
             ):
                 continue
             booking._round2_source_departure = source_departure
             booking._round2_source_arrival = source_arrival
-            booking.departure_segment_index = source_to_alt[source_departure][0]
-            booking.arrival_segment_index = source_to_alt[source_arrival][1]
+            booking.departure_segment_index = departure_map[source_departure]
+            booking.arrival_segment_index = arrival_map[source_arrival]
         else:
             source_departure = getattr(booking, "_round2_source_departure", None)
             source_arrival = getattr(booking, "_round2_source_arrival", None)
@@ -522,12 +600,13 @@ def _move_route_bookings(source_route, target_route):
 
 
 def _switch_vessel_to_detour(vessel, source_route, alternative):
-    mapping = alternative._round2_source_to_alt
+    departure_map = alternative._round2_departure_map
+    arrival_map = alternative._round2_arrival_map
     if any(
         shipment.get_current_booking().service_route is source_route
         and (
-            shipment.get_current_booking().departure_segment_index not in mapping
-            or shipment.get_current_booking().arrival_segment_index not in mapping
+            shipment.get_current_booking().departure_segment_index not in departure_map
+            or shipment.get_current_booking().arrival_segment_index not in arrival_map
         )
         for shipment in vessel.carried_shipments
     ):
@@ -535,10 +614,10 @@ def _switch_vessel_to_detour(vessel, source_route, alternative):
     current = vessel.current_segment
     replacement = None
     if current is not None:
-        indexes = alternative._round2_source_to_alt.get(current.sequence_index)
-        if indexes is None:
+        arrival_index = arrival_map.get(current.sequence_index)
+        if arrival_index is None:
             return False
-        replacement = _segment_by_index(alternative, indexes[1])
+        replacement = _segment_by_index(alternative, arrival_index)
         while vessel in current.current_vessels:
             current.current_vessels.remove(vessel)
 
@@ -561,7 +640,7 @@ def _restore_vessel_to_source(vessel, source_route, alternative):
         source_index = next(
             (
                 index
-                for index, (_, last_index) in alternative._round2_source_to_alt.items()
+                for index, last_index in alternative._round2_arrival_map.items()
                 if last_index == current.sequence_index
             ),
             None,
@@ -729,16 +808,21 @@ def _detour_route_edges(source_route, detour):
 
     source_segments = sorted(source_route.segments, key=lambda item: item.sequence_index)
     detour_segments = sorted(detour.segments, key=lambda item: item.sequence_index)
-    mapping = detour._round2_source_to_alt
+    departure_map = detour._round2_departure_map
+    arrival_map = detour._round2_arrival_map
     count = len(source_segments)
     edges = []
     for start in range(count):
         source_departure_index = source_segments[start].sequence_index
-        departure_index = mapping[source_departure_index][0]
+        departure_index = departure_map.get(source_departure_index)
+        if departure_index is None:
+            continue
         departure = source_segments[start].associated_leg.departure_port
         for step in range(1, count):
             source_arrival_segment = source_segments[(start + step - 1) % count]
-            arrival_index = mapping[source_arrival_segment.sequence_index][1]
+            arrival_index = arrival_map.get(source_arrival_segment.sequence_index)
+            if arrival_index is None:
+                continue
             arrival = source_arrival_segment.associated_leg.arrival_port
             travelled = tuple(
                 _segments_between(detour_segments, departure_index, arrival_index)
