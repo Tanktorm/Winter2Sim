@@ -9,6 +9,12 @@ implemented as part of ``adjust_bookings_before_cargo_handling`` so route and
 vessel changes are decided together with shipment booking changes.
 """
 
+from .round2_strategy import (
+    assign_bookings,
+    manage_service_routes,
+    select_vessel_for_berth as select_round2_vessel_for_berth,
+)
+
 
 class UserStrategy:
     @staticmethod
@@ -53,7 +59,13 @@ class UserStrategy:
             Return exactly one vessel contained in ``waiting_vessels``.
             Returning another object raises a ``ValueError``.
         """
-        return None
+        return select_round2_vessel_for_berth(
+            maritime_data_context,
+            port,
+            waiting_vessels,
+            current_time,
+            waiting_since_by_vessel,
+        )
 
     @staticmethod
     def create_alternative_service_routes(context, now, vessel=None):
@@ -77,7 +89,7 @@ class UserStrategy:
         instead be incorporated into ``adjust_bookings_before_cargo_handling``
         when a combined shipping-line and cargo-owner decision is preferred.
         """
-        return None
+        return manage_service_routes(context, now, vessel)
 
     @staticmethod
     def assign_associated_bookings(context, now, shipment):
@@ -107,7 +119,7 @@ class UserStrategy:
             Return ``False`` when no booking can currently be assigned; the
             simulation may keep the shipment waiting and retry later.
         """
-        return None
+        return assign_bookings(context, now, shipment)
 
     @staticmethod
     def adjust_bookings_before_cargo_handling(context, now, vessel):
