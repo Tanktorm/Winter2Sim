@@ -11,9 +11,15 @@ four effects the distance metric ignores:
   would traverse the leg*, not the multiplier active right now;
 * the wait for the next departure, which penalises infrequent services;
 * the transshipment penalty for every change of service route; and
-* the queue of cargo already booked onto the same departure, which is what
-  stops every shipment of an origin-destination pair from piling onto the same
-  path until it saturates.
+* the queue of cargo already booked onto the same departure. This term is
+  disabled by default: it was meant to spread cargo across paths, but measured
+  on this network it makes things worse at every weight tried (see
+  ``Params.queue_weight``).
+
+Measured against the same seed, the strategy does not yet beat the simulator's
+default over a full year (15.856 days against 15.532). It wins in the first 120
+measured days (13.562 against 13.794) and loses in the last 140 (16.448 against
+15.614). The late-year deficit is unexplained and is the open problem.
 
 Nothing here is specific to a scenario: ports, routes and disruption windows are
 all read from the context. Every weight is read from the environment so a batch
@@ -73,7 +79,13 @@ class Params:
 
     @staticmethod
     def queue_weight():
-        return _env_float("WSC_QUEUE_WEIGHT", 1.0)
+        # Measured off. Weighting the queue was meant to spread cargo across
+        # paths, but on this network it feeds back on itself: the queue raises
+        # the cost of the good path, cargo moves to a genuinely worse one, that
+        # one saturates in turn. Full-year ATT at seed 2026 was 15.856 at weight
+        # 0, 16.256 at 1.0 and 16.786 at 0.2, so the damage is not a matter of
+        # picking a smaller weight. Kept as a knob for the calibration runner.
+        return _env_float("WSC_QUEUE_WEIGHT", 0.0)
 
     @staticmethod
     def closure_slack_days():
