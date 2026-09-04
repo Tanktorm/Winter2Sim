@@ -213,13 +213,27 @@ def route_departure_capacity(route):
 
 def build_edges(context):
     """Every (route, boarding port, alighting port) ride, cached per route set."""
-    state = tuple(sorted(route.id for route in context.service_routes))
+    state = tuple(
+        sorted(
+            (route.id, len(route.deployed_vessels))
+            for route in context.service_routes
+        )
+    )
     cached = getattr(context, "_adaptive_edges", None)
     if cached is not None and cached[0] == state:
         return cached[1]
 
     edges = []
     for route in context.service_routes:
+        # Skip the alternative routes the default shipping-line strategy spins up
+        # while a disruption is active. They borrow vessels from the permanent
+        # routes and are dismantled once the disruption ends, so cargo booked
+        # onto them is left stranded long after the window closes. A route with
+        # no vessels deployed cannot carry anything either.
+        if getattr(route, "source_service_route", None) is not None:
+            continue
+        if not route.deployed_vessels:
+            continue
         segments = sorted(route.segments, key=lambda item: item.sequence_index)
         count = len(segments)
         if count == 0:
