@@ -61,4 +61,5 @@ ipython_config.py
 # Misc temporary files
 *.tmp
 *.swp
-*.swo
+*.swoOutput/Analysis/
+Output/Batch/
