@@ -100,6 +100,11 @@ class Params:
         return _env_float("WSC_LOAD_REFRESH_HOURS", 6.0)
 
     @staticmethod
+    def replan_mode():
+        """How in-transit replanning is handled: default, keep or own."""
+        return os.environ.get("WSC_REPLAN_MODE", "default").strip().casefold()
+
+    @staticmethod
     def enabled():
         return _env_flag("WSC_STRATEGY_ENABLED", True)
 
@@ -435,6 +440,75 @@ def assign_bookings(context, now, shipment):
 
     shipment.current_booking_index = 1
     return True
+
+
+def adjust_bookings_before_cargo_handling(context, now, vessel):
+    """Decide what happens to a carried shipment's remaining booking chain.
+
+    Returning ``None`` lets the simulator's default strategy replan, which it
+    does with its own distance-only metric — undoing any detour this strategy
+    chose. ``keep`` leaves the plan untouched; ``own`` rebuilds the remaining
+    path from the current port using this strategy's cost.
+    """
+    if not Params.enabled():
+        return None
+    mode = Params.replan_mode()
+    if mode == "default":
+        return None
+    if mode == "keep":
+        return True
+    if mode != "own":
+        return None
+
+    current_port = _vessel_current_port(vessel)
+    if current_port is None:
+        return True
+
+    for shipment in list(vessel.carried_shipments):
+        destination = shipment.demand.destination_port
+        if current_port is destination:
+            continue
+        path, _ = find_fastest_path(context, now, current_port, destination)
+        if not path:
+            continue
+
+        completed = [
+            booking
+            for booking in shipment.associated_bookings
+            if shipment.current_booking_index is not None
+            and booking.sequence_index < shipment.current_booking_index
+        ]
+        remaining = [
+            booking
+            for booking in shipment.associated_bookings
+            if booking not in completed
+        ]
+        _detach_bookings(remaining)
+
+        rebuilt = list(completed)
+        next_index = len(completed) + 1
+        for offset, edge in enumerate(path):
+            booking = Booking(
+                sequence_index=next_index + offset,
+                shipment=shipment,
+                service_route=edge.route,
+                departure_segment_index=edge.departure_segment_index,
+                arrival_segment_index=edge.arrival_segment_index,
+            )
+            rebuilt.append(booking)
+            edge.route.associated_bookings.append(booking)
+
+        shipment.associated_bookings = rebuilt
+        shipment.current_booking_index = next_index
+
+    return True
+
+
+def _vessel_current_port(vessel):
+    segment = getattr(vessel, "current_segment", None)
+    if segment is None or segment.associated_leg is None:
+        return None
+    return segment.associated_leg.arrival_port
 
 
 def select_vessel_for_berth(

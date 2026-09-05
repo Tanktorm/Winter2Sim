@@ -147,4 +147,6 @@ class UserStrategy:
         bool
             Return ``True`` after updating the affected booking chains.
         """
-        return None
+        return adaptive_strategy.adjust_bookings_before_cargo_handling(
+            context, now, vessel
+        )
