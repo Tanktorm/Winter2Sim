@@ -101,8 +101,14 @@ class Params:
 
     @staticmethod
     def replan_mode():
-        """How in-transit replanning is handled: default, keep or own."""
-        return os.environ.get("WSC_REPLAN_MODE", "default").strip().casefold()
+        """How in-transit replanning is handled: keep, default or own.
+
+        Defaults to ``keep``. Letting the simulator's default strategy replan
+        rebuilds the remaining chain with its distance-only metric, undoing the
+        detour chosen here: full-year ATT at seed 2026 is 15.285 with ``keep``
+        against 15.856 with ``default``, a difference of 0.57 days.
+        """
+        return os.environ.get("WSC_REPLAN_MODE", "keep").strip().casefold()
 
     @staticmethod
     def enabled():
