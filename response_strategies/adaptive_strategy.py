@@ -16,10 +16,11 @@ four effects the distance metric ignores:
   on this network it makes things worse at every weight tried (see
   ``Params.queue_weight``).
 
-Measured against the same seed, the strategy does not yet beat the simulator's
-default over a full year (15.856 days against 15.532). It wins in the first 120
-measured days (13.562 against 13.794) and loses in the last 140 (16.448 against
-15.614). The late-year deficit is unexplained and is the open problem.
+Measured over three seeds against the simulator's default, this strategy ties:
+15.535 days against 15.601, a difference of 0.066 with a spread of 0.237 between
+seeds. It wins on seeds 2026 and 2027 and loses on 2028, so the difference is
+noise, not an improvement. The weights below were never calibrated, which is the
+obvious next step (see run_batch.py).
 
 Nothing here is specific to a scenario: ports, routes and disruption windows are
 all read from the context. Every weight is read from the environment so a batch
