@@ -31,6 +31,8 @@ def main():
                         help="Disable the user strategy to measure the default.")
     parser.add_argument("--baseline", action="store_true",
                         help="Use the scenario without disruptions.")
+    parser.add_argument("--dashboard", action="store_true",
+                        help="Also write the full Output/ CSV set the dashboard reads.")
     arguments = parser.parse_args()
 
     if arguments.no_strategy:
@@ -43,6 +45,7 @@ def main():
     )
     import scenario_builders
     from simulation_model import Model
+    from simulation_output_csv_writer import write_all, write_att_by_period
 
     days = arguments.days or SIMULATION_DAYS
     warm_up_days = arguments.warmup or WARM_UP_DAYS
@@ -79,6 +82,15 @@ def main():
                 f"ATT {att:.2f} ({(time.perf_counter()-started)/60:.1f} min)",
                 flush=True,
             )
+
+    if arguments.dashboard:
+        # The dashboard reads the Output/ CSV set, which only main.py writes.
+        # Writing it here too means a measurement run can be inspected in the
+        # dashboard without paying for a second run.
+        output_directory = PROJECT_ROOT / "Output"
+        write_all(sim, output_directory)
+        write_att_by_period(output_directory, [(r[1], r[2], r[3]) for r in rows])
+        print(f"[{arguments.label}] dashboard CSVs written to {output_directory}")
 
     ANALYSIS_DIRECTORY.mkdir(parents=True, exist_ok=True)
     output_path = ANALYSIS_DIRECTORY / f"att_{arguments.label}.csv"
