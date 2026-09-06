@@ -62,3 +62,5 @@ ipython_config.py
 *.tmp
 *.swp
 *.swo
+Output/Analysis/
+Output/Batch/
