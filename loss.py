@@ -46,17 +46,66 @@ def cumulative_loss(baseline, disrupted):
     return total
 
 
+def detail(baseline, disrupted, label):
+    """Break the loss into what it penalises and what it credits.
+
+    A total says how much was lost; this says where. Periods slower than the
+    baseline add penalty, faster ones return credit, and the worst handful
+    usually point straight at the window that needs work.
+    """
+    by_index = {p[0]: p for p in disrupted}
+    penalty = credit = 0.0
+    rows = []
+    for index, start, end, baseline_att in baseline:
+        period = by_index.get(index)
+        if period is None or period[1] != start or period[2] != end:
+            continue
+        disruption_att = float(f"{period[3]:.2f}")
+        if disruption_att <= 0:
+            continue
+        value = (1.0 - baseline_att / disruption_att) * (end - start + 1)
+        rows.append((value, start, end, baseline_att, disruption_att))
+        if value > 0:
+            penalty += value
+        else:
+            credit += value
+
+    print(f"\n{label}")
+    print(f"  loss {penalty + credit:8.3f} = penalizacion {penalty:.3f} + credito {credit:.3f}")
+    rows.sort(reverse=True)
+    print("  periodos que mas penalizan:")
+    for value, start, end, baseline_att, disruption_att in rows[:6]:
+        print(
+            f"    dias {start:>3}-{end:<3} base {baseline_att:5.2f} vs {disruption_att:5.2f}"
+            f"  loss {value:+.2f}"
+        )
+    print("  periodos que mas acreditan:")
+    for value, start, end, baseline_att, disruption_att in rows[-4:]:
+        print(
+            f"    dias {start:>3}-{end:<3} base {baseline_att:5.2f} vs {disruption_att:5.2f}"
+            f"  loss {value:+.2f}"
+        )
+
+
 def main():
     if len(sys.argv) < 3:
         print(__doc__)
         return
-    baseline = load(sys.argv[1])
+    wants_detail = "--detalle" in sys.argv
+    argv = [a for a in sys.argv if a != "--detalle"]
+    baseline = load(argv[1])
     print(f"{'curva':<28}{'loss':>10}{'ATT medio':>12}")
     print("-" * 50)
-    for path in sys.argv[2:]:
+    for path in argv[2:]:
         periods = load(path)
         att = sum(p[3] for p in periods) / len(periods)
-        print(f"{path.split('/')[-1]:<28}{cumulative_loss(baseline, periods):>10.3f}{att:>12.3f}")
+        name = path.replace("\\", "/").split("/")[-1]
+        print(f"{name:<28}{cumulative_loss(baseline, periods):>10.3f}{att:>12.3f}")
+
+    if wants_detail:
+        for path in argv[2:]:
+            name = path.replace("\\", "/").split("/")[-1]
+            detail(baseline, load(path), name)
 
 
 if __name__ == "__main__":
