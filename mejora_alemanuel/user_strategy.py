@@ -10,6 +10,7 @@ vessel changes are decided together with shipment booking changes.
 """
 
 from .round2_strategy import (
+    adjust_bookings_before_cargo_handling as adjust_round2_bookings,
     assign_bookings,
     manage_service_routes,
     select_vessel_for_berth as select_round2_vessel_for_berth,
@@ -150,4 +151,4 @@ class UserStrategy:
         bool
             Return ``True`` after updating the affected booking chains.
         """
-        return None
+        return adjust_round2_bookings(context, now, vessel)

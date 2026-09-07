@@ -60,6 +60,17 @@ _DEFAULT_S7_SKIP = True
 _DEFAULT_S1_BYPASS = False
 
 
+def _replan_mode():
+    """How the remaining booking chain is handled when a vessel reaches a port.
+
+    ``keep``    leave the plan as assigned (default);
+    ``adaptive`` rebuild the remaining leg only when the plan still crosses a
+                disruption, so the cost is paid on the few shipments that need it;
+    ``default``  hand the decision back to the simulator's default strategy.
+    """
+    return os.environ.get("WSC_REPLAN_MODE", "keep").strip().casefold()
+
+
 def _env_float(name, default, minimum=0.0, maximum=100.0):
     try:
         value = float(os.environ.get(name, default))
@@ -298,6 +309,105 @@ def assign_bookings(context, now, shipment):
 
     shipment.current_booking_index = 1
     return True
+
+
+def adjust_bookings_before_cargo_handling(context, now, vessel):
+    """Keep control of the remaining booking chain while cargo is in transit.
+
+    Returning ``None`` here hands the decision to the default strategy, which
+    rebuilds the chain with its distance-only metric and so undoes the detours
+    this strategy chose. Holding the plan instead keeps those detours; in
+    ``adaptive`` mode the remaining leg is recomputed with this strategy's own
+    cost, but only for shipments whose plan still crosses a disruption, which
+    keeps the extra work off the vast majority of arrivals.
+    """
+    if not is_round_two_context(context):
+        return None
+
+    mode = _replan_mode()
+    if mode == "default":
+        return None
+    if mode != "adaptive":
+        return True
+
+    current_port = _arrival_port_of(vessel)
+    if current_port is None:
+        return True
+
+    for shipment in list(getattr(vessel, "carried_shipments", ())):
+        destination = shipment.demand.destination_port
+        if current_port is destination:
+            continue
+        if not _plan_crosses_disruption(context, now, shipment):
+            continue
+
+        path = _find_expected_time_path(context, now, current_port, destination)
+        if not path:
+            continue
+
+        kept = [
+            booking
+            for booking in shipment.associated_bookings
+            if shipment.current_booking_index is not None
+            and booking.sequence_index < shipment.current_booking_index
+        ]
+        replaced = [b for b in shipment.associated_bookings if b not in kept]
+        _remove_booking_references(replaced)
+
+        rebuilt = list(kept)
+        next_index = len(kept) + 1
+        for offset, edge in enumerate(path):
+            booking = Booking(
+                sequence_index=next_index + offset,
+                shipment=shipment,
+                service_route=edge.route,
+                departure_segment_index=edge.departure_segment_index,
+                arrival_segment_index=edge.arrival_segment_index,
+            )
+            if edge.source_departure_index is not None:
+                booking._round2_source_departure = edge.source_departure_index
+                booking._round2_source_arrival = edge.source_arrival_index
+            rebuilt.append(booking)
+            edge.route.associated_bookings.append(booking)
+
+        shipment.associated_bookings = rebuilt
+        shipment.current_booking_index = next_index
+
+    return True
+
+
+def _arrival_port_of(vessel):
+    segment = getattr(vessel, "current_segment", None)
+    if segment is None or segment.associated_leg is None:
+        return None
+    return segment.associated_leg.arrival_port
+
+
+def _plan_crosses_disruption(context, now, shipment):
+    """True when the not-yet-sailed part of the chain still meets a disruption.
+
+    Cheap on purpose: it only looks at whether a leg is multiplied or a called
+    port is closed at the moment of the check, which is what makes replanning
+    affordable to run on every arrival.
+    """
+    index = shipment.current_booking_index
+    if index is None:
+        return False
+    for booking in shipment.associated_bookings:
+        if booking.sequence_index < index:
+            continue
+        route = booking.service_route
+        if route is None:
+            continue
+        for segment in route.segments:
+            leg = segment.associated_leg
+            if leg is None:
+                continue
+            if _leg_multiplier_at(context, leg, now) > 1.0:
+                return True
+            if _closed_port_wait_days(context, leg.arrival_port, now) > 0.0:
+                return True
+    return False
 
 
 def select_vessel_for_berth(
