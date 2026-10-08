@@ -1,0 +1,231 @@
+# Ronda 3 (a ciegas): estrategia y tutorial
+
+Entrega: **23 de octubre de 2026**. Escenario oculto: pueden cambiar las disrupciones,
+la red, los puertos, los tramos, las rutas, la flota y la demanda.
+
+## 1. La decisión
+
+La entrega de la Ronda 2 **no sirve** para la Ronda 3: tiene un guardia
+(`is_round_two_context`) que exige las disrupciones exactas de la Ronda 2 y parámetros
+por nombre de ruta (`s4`, `s5`, …). En el escenario oculto el guardia falla y las
+1,079 líneas se vuelven un `return None`: compite la estrategia por defecto.
+
+Esta rama trae una estrategia nueva, `response_strategies/r3_strategy.py`, construida
+para cualquier red:
+
+- **Cero nombres de puertos, ids de ruta o fechas.** Todo se deriva del contexto.
+- **Lee todas las disrupciones por adelantado** desde `context.disruption_plans`,
+  con la regla exacta del simulador (chequeo diario; si dos planes tocan el mismo
+  tramo o muelle, gana el último de la lista).
+- **Cierre parcial ≠ cierre total.** Si cierran 1 de 3 muelles, el puerto sigue
+  operando y la estrategia no lo evita (el default sí lo evita).
+- **Degradación segura.** Cualquier error interno apaga solo ese componente y
+  devuelve la decisión al default. La corrida nunca se cae.
+
+## 2. Qué hace (y de dónde viene cada pieza)
+
+| Componente | Qué hace | Evidencia |
+|---|---|---|
+| Ruteo por tiempo | Dijkstra que minimiza la **hora de llegada**: espera, escalas, tramo congestionado con el multiplicador del día en que se navegaría, puerto cerrado = esperar a que reabra | Mismo principio que la estrategia del equipo en R2 (junto con el desvío de S5): loss 34.6 del default → ~3 |
+| Desvío de flota completa | Si navegar el tramo congestionado tarda más que rodearlo con tramos existentes (+1 día de margen), **todos** los buques de esa ruta toman el desvío mientras dura el evento | La regla general reproduce lo que Optuna eligió a mano en R2: S5 sí, S4 sí, S9 no |
+| Seguimiento en vivo (`live`) | Registra cada llegada y salida de cada buque, proyecta sus próximas escalas y reserva en el buque que **de verdad sale primero**, en vez de suponer una espera media | Nuevo. En pruebas unitarias (sin simulación completa) predice la siguiente escala con 0.07 días de error medio. Se apaga solo si en la corrida el error medio pasa de 1.5 días |
+| Replanificación | Al llegar un buque a puerto, se reprograma la carga a bordo (y, en modo vivo, la que espera en ese puerto) **solo si** el plan nuevo llega al menos 1 día antes (2 días sin modo vivo) | Corrige el defecto de la R2: devolver `None` dejaba al default rehacer los planes por distancia |
+| Prioridad de muelle | Bajo congestión, primero el buque con más carga envejecida | Igual que la entrega R2 (peso calibrado 3612) |
+
+Por qué el modo en vivo es la apuesta: la métrica da **crédito** por cada período más
+rápido que el baseline, y el baseline es el default sin disrupciones. Los buques se
+liberan cada 7 días y luego derivan con el ruido de ±5%: **no** están repartidos de
+forma uniforme, así que la espera real difiere mucho del promedio. Conocerla vale en
+los 72 períodos, haya disrupción o no, y no depende de qué se rompa en el escenario
+oculto.
+
+Riesgo honesto: el modo en vivo **no se ha medido en una simulación real**. Por eso el
+plan de pruebas compara siempre `r3` (vivo) contra `r3_live0` (sin vivo) y la
+decisión final sale de esa comparación.
+
+## 3. Archivos
+
+| Archivo | Para qué | ¿Se entrega? |
+|---|---|---|
+| `response_strategies/r3_strategy.py` | La estrategia | **Sí** |
+| `response_strategies/user_strategy.py` | Delega en `r3_strategy` | **Sí** |
+| `r3_bench.py` | Banco de pruebas: escenarios tipo "oculto", baseline propio por escenario y semilla, loss oficial | No (solo pruebas) |
+| `RONDA3.md` | Esta guía | No |
+
+## 4. Tutorial en VS Code (Windows)
+
+> **Pega los comandos de uno en uno** y espera a que termine cada uno. Pegar varios
+> juntos ya cortó una corrida de 3 horas.
+
+### 4.1 Traer los archivos a tu proyecto
+
+1. Abre VS Code → `File > Open Folder…` →
+   `C:\Users\Andres Ortiz\Documents\winter\SimulationChallenge2026_Py_Round2`.
+2. Abre la terminal: `Terminal > New Terminal` (es PowerShell).
+3. Crea una rama propia para la Ronda 3, así la entrega de la Ronda 2 queda intacta:
+
+   ```powershell
+   git switch -c ronda3
+   ```
+
+4. Agrega tu repositorio como segundo remoto (solo la primera vez):
+
+   ```powershell
+   git remote add tanktorm https://github.com/Tanktorm/Winter2Sim.git
+   ```
+
+5. Descarga la rama:
+
+   ```powershell
+   git fetch tanktorm claude/kind-cori-b7g371
+   ```
+
+6. Copia los cuatro archivos a tu carpeta:
+
+   ```powershell
+   git checkout tanktorm/claude/kind-cori-b7g371 -- response_strategies/r3_strategy.py response_strategies/user_strategy.py r3_bench.py RONDA3.md
+   ```
+
+7. Confirma que llegaron:
+
+   ```powershell
+   git status
+   ```
+
+   Debes ver `r3_strategy.py`, `user_strategy.py`, `r3_bench.py` y `RONDA3.md`.
+
+Si `git fetch` pide usuario, inicia sesión con tu cuenta de GitHub (Tanktorm). Si
+prefieres no usar git: en GitHub abre la rama `claude/kind-cori-b7g371` de
+`Tanktorm/Winter2Sim`, descarga esos cuatro archivos y ponlos en las mismas rutas.
+
+### 4.2 Prueba de humo (minutos)
+
+Verifica que todo carga y corre, y te dice la velocidad de tu máquina:
+
+```powershell
+.\.venv\Scripts\python.exe r3_bench.py smoke
+```
+
+Debe terminar con `PRUEBA DE HUMO OK`. Corre 75 días simulados con la estrategia y
+75 con el baseline. Anota los minutos que imprime la línea `[smoke_r3] ... listo en X
+min`: **una corrida completa tarda ≈ X × 6.7**.
+
+Si sale `PRUEBA DE HUMO FALLO` o aparece una línea `[R3] component ... disabled`,
+cópiame el error completo y no sigas.
+
+### 4.3 Plan rápido: Ronda 2, semilla 2026 (3 corridas)
+
+```powershell
+.\.venv\Scripts\python.exe r3_bench.py plan rapido
+```
+
+Corre el baseline (rápido: memoriza las rutas del default, mismo resultado), `r3` y
+`r3_live0`. Si lo cortas con `Ctrl+C`, al relanzar sigue donde quedó (las corridas
+terminadas no se repiten). Al terminar:
+
+```powershell
+.\.venv\Scripts\python.exe r3_bench.py report
+```
+
+Referencias en esta misma semilla: default **34.574**, entrega R2 **0.614**
+(sobreajustada a esta semilla, no transfiere).
+
+### 4.4 Generalidad y semillas (lo que decide)
+
+```powershell
+.\.venv\Scripts\python.exe r3_bench.py plan generalidad
+```
+
+```powershell
+.\.venv\Scripts\python.exe r3_bench.py plan semillas
+```
+
+`generalidad` corre tres escenarios que **no** son la Ronda 2:
+
+| Escenario | Qué prueba |
+|---|---|
+| `h1` | Misma red, otras disrupciones: tramo troncal compartido por 3 rutas, cierre del hub Singapore, cierre de Rotterdam, dos tramos congestionados más |
+| `h2` | Red distinta: otra flota (S1 7, S5 8, S6 4, S9 6), Singapore con 2 muelles, demanda ×1.3 |
+| `h3` | Estrés: cierre largo (40 días) de Tanger Med, cierre parcial de 1 muelle, dos eventos solapados en S5, disrupción que empieza en el warm-up |
+
+`semillas` repite la Ronda 2 con las semillas 2027 y 2028.
+
+Son 15 corridas en total. Si la máquina de Alemanuel es más rápida (según su log de
+Optuna, una corrida le tomaba unos 15 min), córranlas ahí; con 4 núcleos o más se puede usar
+`--workers 2`. En tu máquina (2 núcleos, 8 GB) deja una a la vez.
+
+Opcional, como referencia (lentas, usan el default sin memorizar):
+
+```powershell
+.\.venv\Scripts\python.exe r3_bench.py plan default
+```
+
+### 4.5 Una corrida suelta con otro parámetro
+
+```powershell
+.\.venv\Scripts\python.exe r3_bench.py run h2 r3 --seed 2026 --set detours=0 --label r3_det0
+```
+
+Cualquier clave de `DEFAULTS` en `r3_strategy.py` se puede cambiar así sin tocar el
+código.
+
+## 5. Cómo decidir
+
+`report` imprime el loss de cada corrida contra el baseline de su mismo escenario y
+semilla, y el promedio por variante.
+
+1. **Descalificantes** (antes de mirar el loss):
+   - Aparece `[R3] component ... disabled` o `live predictions disabled` en la consola.
+   - La variante completa más de 1% menos TEU (columna `TEU compl.` del report) que la
+     otra variante en el mismo escenario y semilla: carga que dejó de moverse.
+2. **Vivo o no vivo:** se elige la variante con **menor loss promedio** sobre las 6
+   combinaciones (r2 × 3 semillas, h1, h2, h3). Si la diferencia promedio es menor
+   de 1 punto, gana `r3_live0` (más simple, menos riesgo).
+3. Ninguna decisión sale de una sola semilla: el loss varía ~6 puntos entre semillas.
+
+Si gana `r3_live0`, cambia en `response_strategies/r3_strategy.py`:
+
+```python
+    "live": 1.0,
+```
+
+por
+
+```python
+    "live": 0.0,
+```
+
+Los jueces no ponen variables de entorno: lo que vale es lo que está en `DEFAULTS`.
+
+## 6. Preparar la entrega
+
+1. Fija los valores ganadores en `DEFAULTS` (paso 5).
+2. Corrida final como la harán los jueces, para ver el dashboard:
+
+   ```powershell
+   .\.venv\Scripts\python.exe main.py
+   ```
+
+   El dashboard muestra el *Cumulative Resilience Loss* de la Ronda 2.
+3. La carpeta `response_strategies/` que se entrega lleva `__init__.py`,
+   `default_strategy.py`, `strategy_validation.py` (sin cambios), `user_strategy.py` y
+   `r3_strategy.py`. Lo de la Ronda 2 (`round2_strategy.py`, `optimize_round2.py`,
+   `optuna_state/`) no se usa: mejor no incluirlo.
+4. No se tocó nada fuera de `response_strategies/`.
+
+## 7. Registro de desarrollo
+
+Los organizadores piden historial verificable. En tu rama `ronda3`, después de cada
+paso:
+
+```powershell
+git add response_strategies Output/R3/results.csv
+```
+
+```powershell
+git commit -m "Ronda 3: resultados plan rapido"
+```
+
+Guarda `Output/R3/` completo: son las curvas de cada prueba. Si preguntan cómo se
+desarrolló, la respuesta tiene que ser la verdadera, incluido el uso de asistentes de
+IA.
