@@ -73,6 +73,21 @@ DEFAULTS = {
     "live_max_error_days": 1.5,
     "tree_max_age_days": 0.5,
     "horizon_days": 200.0,
+    # Even spacing of the vessels of each service (see _phase_delays).  The
+    # simulator releases vessels every 7 days whatever the cycle length, which
+    # leaves uneven headways; a vessel running too close to the one ahead takes
+    # a slightly longer path made of existing legs until the gaps even out.
+    # By default this only runs until shortly before the measured period.
+    "phase": 1.0,
+    "phase_until_day": -1.0,  # -1: WARM_UP_DAYS - 25
+    "phase_min_delay_days": 0.75,
+    "phase_tolerance_days": 0.3,
+    # Keep spacing during the measured period too, more cautiously: cargo on
+    # board pays for every adjustment there.
+    "phase_measure": 1.0,
+    "phase_measure_min_delay_days": 1.5,
+    "phase_measure_max_extra_days": 2.5,
+    "phase_measure_cooldown_cycles": 0.5,
 }
 
 _CONFIG = None
@@ -132,6 +147,11 @@ def create_alternative_service_routes(context, now, vessel=None):
             state.update(now)
             if vessel is not None:
                 state.switch_vessel(vessel)
+                if not state.failed.get("phase") and state.is_departure(vessel):
+                    try:
+                        state.space_vessel(vessel, now)
+                    except Exception as error:  # noqa: BLE001
+                        state.fail("phase", error)
         except Exception as error:  # noqa: BLE001 - never crash the run
             state.fail("routes", error)
     if vessel is not None and not state.failed.get("tracking"):
@@ -372,6 +392,13 @@ class _State:
         self.live_disabled = not _on("live")
         self.trees = {}
         self.activations = 0
+        self.private_variants = {}
+        self.legs_from = {}
+        for leg in context.legs:
+            if leg.departure_port is not leg.arrival_port:
+                self.legs_from.setdefault(leg.departure_port, []).append(leg)
+        self.phase_end = _phase_end()
+        self.last_spacing = {}
 
     # -- failure handling ---------------------------------------------------
 
@@ -607,25 +634,28 @@ class _State:
         return path
 
     def _build_variant(self, route, info, cluster, number):
+        return self._make_variant(route, info, cluster.paths, number, "D", cluster)
+
+    def _make_variant(self, route, info, paths, number, tag, cluster=None):
         existing = {item.id.casefold() for item in self.context.service_routes}
-        route_id = f"{route.id}-R3D{number}"
+        route_id = f"{route.id}-R3{tag}{number}"
         while route_id.casefold() in existing:
             number += 100
-            route_id = f"{route.id}-R3D{number}"
+            route_id = f"{route.id}-R3{tag}{number}"
         variant = ServiceRoute(
             id=route_id,
-            name=f"{route.name} R3 detour {number}",
+            name=f"{route.name} R3 {'detour' if cluster else 'spacing'} {number}",
             start_day_of_week=route.start_day_of_week,
         )
         variant.source_service_route = route
-        variant.disruption_key = ("r3-detour", route.id, number)
+        variant.disruption_key = ("r3-" + tag, route.id, number)
         dep_map = [0] * info.n
         arr_map = [0] * info.n
         inverse = {}
         legs = []
         for pos in range(info.n):
             dep_map[pos] = len(legs)
-            legs.extend(cluster.paths.get(pos) or [info.legs[pos]])
+            legs.extend(paths.get(pos) or [info.legs[pos]])
             arr_map[pos] = len(legs) - 1
             inverse[len(legs) - 1] = pos
         for index, leg in enumerate(legs, start=1):
@@ -644,11 +674,12 @@ class _State:
             segment.associated_leg.segments.append(segment)
             self.context.partial_service_routes.append(segment)
         self.context.service_routes.append(variant)
-        _log(
-            f"detour-{route_id}",
-            f"detour {route_id}: positions {sorted(cluster.paths)} "
-            f"days {cluster.start:.1f}-{cluster.end:.1f}",
-        )
+        if cluster is not None:
+            _log(
+                f"detour-{route_id}",
+                f"detour {route_id}: positions {sorted(cluster.paths)} "
+                f"days {cluster.start:.1f}-{cluster.end:.1f}",
+            )
         return variant
 
     def planned_variant(self, route, day):
@@ -727,13 +758,16 @@ class _State:
         target = self.active[source]
         if route is target:
             return
+        self._switch_to(vessel, route, target)
+
+    def _switch_to(self, vessel, route, target):
         current = vessel.current_segment
         if current is None:
             src_pos = None
         else:
             src_pos = self.src_pos_in(route, current.sequence_index - 1)
             if src_pos is None:
-                return  # intermediate detour port: switch at the next call
+                return False  # intermediate detour port: switch at the next call
         moves = []
         for shipment in vessel.carried_shipments:
             try:
@@ -742,7 +776,7 @@ class _State:
                 continue
             if booking.service_route is route:
                 if self.booking_src(booking) is None:
-                    return  # cannot map this cargo; keep the vessel as it is
+                    return False  # cannot map this cargo; keep the vessel as it is
                 moves.append(booking)
         for booking in moves:
             self._move_booking(booking, route, target)
@@ -768,6 +802,163 @@ class _State:
         self.assignment_version += 1
         self._mark_dirty(vessel)
         self.trees.clear()
+        return True
+
+    # -- even spacing of each service's vessels -------------------------------
+
+    def is_departure(self, vessel):
+        track = self.track.get(vessel)
+        return track is not None and track.mode == "port"
+
+    def space_vessel(self, vessel, now):
+        """At a departure, send a vessel that runs too close behind the one
+        ahead of it along a slightly longer path of existing legs."""
+        if not _on("phase"):
+            return
+        day = _day(now)
+        measuring = day >= self.phase_end
+        if measuring and not _on("phase_measure"):
+            return
+        route = vessel.assigned_service_route
+        if route not in self.info or self.active[route] is not route:
+            return
+        info = self.info[route]
+        if info.n < 2 or len(self.family_vessels(route)) < 2:
+            return
+        cycle = info.headway * info.count
+        # A closure or a congested leg on this service bunches its vessels on
+        # purpose; fighting that only delays cargo.  Stay out of it.
+        if self._route_disturbed(info, day - cycle, day + 1.5 * cycle + 10.0):
+            return
+        if measuring:
+            last = self.last_spacing.get(vessel)
+            if last is not None and day - last < _cfg("phase_measure_cooldown_cycles") * cycle:
+                return
+        delays = self._phase_delays(route, info, day)
+        if not delays:
+            return
+        need = delays.get(vessel, 0.0)
+        minimum = _cfg("phase_measure_min_delay_days") if measuring else _cfg("phase_min_delay_days")
+        if need < minimum:
+            return
+        if measuring:
+            need = min(need, _cfg("phase_measure_max_extra_days"))
+        current = vessel.current_segment
+        position = (current.sequence_index % info.n) if current is not None else 0
+        choice = self._delay_path(info, position, need, vessel, day)
+        if choice is None:
+            return
+        if measuring and choice[0] > _cfg("phase_measure_max_extra_days"):
+            return
+        extra, legs = choice
+        key = (route, position, tuple(id(leg) for leg in legs))
+        variant = self.private_variants.get(key)
+        if variant is None:
+            variant = self._make_variant(
+                route, info, {position: legs}, len(self.private_variants) + 1, "S"
+            )
+            self.private_variants[key] = variant
+            self.family[route].append(variant)
+        if self._switch_to(vessel, route, variant):
+            self.last_spacing[vessel] = day
+            _log(
+                f"spacing-{route.id}",
+                f"spacing {route.id}: first adjustment on day {day:.1f} "
+                f"(+{extra:.1f} days for one vessel)",
+            )
+
+    def _route_disturbed(self, info, start, end):
+        if any(c.start < end and start < c.end for c in info.clusters):
+            return True
+        for leg in info.legs:
+            window = self.leg_window.get(leg)
+            if window is not None and window[2] != 1.0 and window[0] < end and start < window[1]:
+                return True
+        for port in info.dep_ports:
+            if self._closed_overlaps(port, start, end):
+                return True
+        return False
+
+    def _phase_delays(self, source, info, day):
+        """Delay (days) that each vessel needs so that the service's calls at
+        its first port become evenly spaced, moving vessels only later."""
+        vessels = self.family_vessels(source)
+        count = len(vessels)
+        reference = info.n - 1
+        phases = {}
+        cycles = []
+        for vessel in vessels:
+            timeline = self.timeline(vessel, day)
+            if timeline is None:
+                return None
+            times = [call[4] for call in timeline.calls if call[2] == reference]
+            if len(times) < 2:
+                return None
+            phases[vessel] = times[0]
+            cycles.append(times[1] - times[0])
+        cycles.sort()
+        cycle = cycles[len(cycles) // 2]
+        if cycle <= 0.0:
+            return None
+        spacing = cycle / count
+        order = sorted(vessels, key=lambda item: phases[item])
+        unwrapped = [phases[vessel] for vessel in order]
+        best = None
+        for rotation in range(count):
+            sequence = [
+                unwrapped[(rotation + i) % count] + (cycle if rotation + i >= count else 0.0)
+                for i in range(count)
+            ]
+            shift = max(sequence[i] - i * spacing for i in range(count))
+            total = sum(shift + i * spacing - sequence[i] for i in range(count))
+            if best is None or total < best[0] - 1e-9:
+                best = (total, rotation, shift, sequence)
+        _, rotation, shift, sequence = best
+        return {
+            order[(rotation + i) % count]: shift + i * spacing - sequence[i]
+            for i in range(count)
+        }
+
+    def _delay_path(self, info, position, need, vessel, day):
+        """Longer path (up to 4 existing legs) that replaces the next segment
+        and adds as close to ``need`` days as possible."""
+        leg = info.legs[position]
+        origin = leg.departure_port
+        destination = leg.arrival_port
+        speed = _vessel_speed(vessel, self)
+        call = self.berth_call
+        base = leg.sailing_distance / (speed * 24.0) * self.mult_at(leg, day)
+        found = []
+
+        def explore(port, moment, path):
+            if path and port is destination:
+                found.append((moment - day - base, list(path)))
+                return
+            if len(path) == 4:
+                return
+            for candidate in self.legs_from.get(port, ()):
+                if not path and candidate is leg:
+                    continue
+                if self.mult_at(candidate, moment) > 1.0:
+                    continue
+                arrival = moment + candidate.sailing_distance / (speed * 24.0)
+                following = candidate.arrival_port
+                if following is not destination:
+                    if self.reopen(following, arrival) > arrival:
+                        continue
+                    arrival += call
+                path.append(candidate)
+                explore(following, arrival, path)
+                path.pop()
+
+        explore(origin, day, [])
+        ceiling = need + max(_cfg("phase_tolerance_days"), 0.25 * need)
+        floor = 0.5 * _cfg("phase_min_delay_days")
+        usable = [item for item in found if floor <= item[0] <= ceiling]
+        if not usable:
+            return None
+        # Closest to the need; a slight overshoot is corrected by the others.
+        return min(usable, key=lambda item: (abs(item[0] - need), len(item[1])))
 
     # -- vessel tracking ----------------------------------------------------
 
@@ -1362,6 +1553,18 @@ class _State:
 # ---------------------------------------------------------------------------
 # Module helpers
 # ---------------------------------------------------------------------------
+
+
+def _phase_end():
+    value = _cfg("phase_until_day")
+    if value >= 0.0:
+        return value
+    try:
+        from config.simulation_config import WARM_UP_DAYS
+
+        return float(WARM_UP_DAYS) - 25.0
+    except Exception:  # noqa: BLE001
+        return 115.0
 
 
 def _ema(previous, sample, alpha):
