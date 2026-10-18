@@ -87,6 +87,78 @@ SCENARIOS = {
     },
 }
 
+# Los 7 casos del banco de Alemanuel (rama propuesta/alemanuel1_Round3,
+# response_strategies/hidden_scenarios.py, SPEC_VERSION 4), copiados tal cual
+# para medir r3 en exactamente los mismos escenarios que su optimizador.
+ALEMANUEL_CASES = {
+    "a1": {
+        "id": "case_01_long_ocean_detours",
+        "structure": {"route_start_shift_days": 1.4},
+        "disruptions": [
+            {"type": "leg", "route": "S1", "sequence": 4, "start": 28, "duration": 48, "multiplier": 4.0},
+            {"type": "leg", "route": "S4", "sequence": 2, "start": 172, "duration": 35, "multiplier": 6.0},
+        ],
+    },
+    "a2": {
+        "id": "case_02_central_hub_closure",
+        "structure": {"demand_scale": 1.10, "demand_port_multipliers": {"Singapore": 1.35}},
+        "disruptions": [
+            {"type": "port", "port": "Singapore", "start": 75, "duration": 18},
+            {"type": "leg", "route": "S7", "sequence": 2, "start": 88, "duration": 30, "multiplier": 3.5},
+        ],
+    },
+    "a3": {
+        "id": "case_03_scarce_fleet_high_demand",
+        "structure": {"demand_scale": 1.40, "fleet_scale": 0.72, "capacity_scale": 0.90},
+        "disruptions": [
+            {"type": "leg", "route": "S5", "sequence": 4, "start": 42, "duration": 42, "multiplier": 3.0},
+            {"type": "port", "port": "New Jersey", "start": 58, "duration": 14},
+            {"type": "leg", "route": "S9", "sequence": 3, "start": 61, "duration": 27, "multiplier": 4.0},
+        ],
+    },
+    "a5": {
+        "id": "case_05_overlapping_same_service",
+        "structure": {"distance_scale": 1.08},
+        "disruptions": [
+            {"type": "leg", "route": "S1", "sequence": 4, "start": 92, "duration": 44, "multiplier": 5.0},
+            {"type": "leg", "route": "S1", "sequence": 6, "start": 104, "duration": 25, "multiplier": 4.0},
+            {"type": "port", "port": "Piraeus", "start": 110, "duration": 11},
+        ],
+    },
+    "a6": {
+        "id": "case_06_changed_topology",
+        "structure": {"remove_routes": ["S4"], "demand_port_multipliers": {"Los Angeles": 1.25}},
+        "disruptions": [
+            {"type": "leg", "route": "S9", "sequence": 3, "start": 48, "duration": 55, "multiplier": 4.5},
+            {"type": "port", "port": "Busan", "start": 190, "duration": 16},
+        ],
+    },
+    "a7": {
+        "id": "case_07_renamed_slower_network",
+        "structure": {"route_id_prefix": "HIDDEN-", "speed_scale": 0.82, "route_start_shift_days": 3.2, "distance_scale": 1.12},
+        "disruptions": [
+            {"type": "leg", "route": "S2", "sequence": 6, "start": 20, "duration": 22, "multiplier": 7.0},
+            {"type": "port", "port": "Tianjin", "start": 155, "duration": 20},
+        ],
+    },
+    "a8": {
+        "id": "case_08_rapid_staggered_shocks",
+        "structure": {"fleet_scale": 0.90},
+        "disruptions": [
+            {"type": "leg", "route": "S3", "sequence": 1, "start": 18, "duration": 7, "multiplier": 5.0},
+            {"type": "leg", "route": "S6", "sequence": 3, "start": 82, "duration": 9, "multiplier": 5.5},
+            {"type": "port", "port": "Kaohsiung", "start": 149, "duration": 6},
+            {"type": "leg", "route": "S7", "sequence": 3, "start": 221, "duration": 8, "multiplier": 8.0},
+            {"type": "port", "port": "Cartagena", "start": 305, "duration": 7},
+        ],
+    },
+}
+for _name, _case in ALEMANUEL_CASES.items():
+    SCENARIOS[_name] = {"descripcion": "banco de Alemanuel: " + _case["id"], "alemanuel": _case}
+
+# Mejor configuracion de Alemanuel (trial 28 de su optimizacion v4), para comparar.
+ALEMANUEL_TRIAL28 = {"a1": -18.17, "a2": 16.12, "a3": -30.76, "a5": -19.03, "a6": 10.49, "a7": 15.61, "a8": 7.40}
+
 PLANS = {
     # Lo primero: Ronda 2, semilla 2026, las dos variantes de la estrategia.
     "rapido": [
@@ -121,6 +193,15 @@ PLANS = {
     ],
 }
 PLANS["completo"] = PLANS["rapido"] + PLANS["generalidad"] + PLANS["semillas"]
+# Los 7 casos de Alemanuel: baseline (default sin disrupciones) y r3.
+PLANS["alemanuel"] = [
+    (name, mode, 2026, label, {})
+    for name in ALEMANUEL_CASES
+    for mode, label in (("baseline", "baseline"), ("r3", "r3"))
+]
+PLANS["alemanuel_live0"] = [
+    (name, "r3", 2026, "r3_live0", {"live": "0"}) for name in ALEMANUEL_CASES
+]
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +214,8 @@ def build_context(scenario_name, with_disruptions, warm_up_days):
     from maritime_data_context import Berth, DisruptionPlan, Vessel
 
     spec = SCENARIOS[scenario_name]
+    if spec.get("alemanuel"):
+        return _alemanuel_context(spec["alemanuel"], with_disruptions, warm_up_days)
     if spec.get("official"):
         if with_disruptions:
             return scenario_builders.create_with_disruption(warm_up_days)
@@ -212,6 +295,124 @@ def build_context(scenario_name, with_disruptions, warm_up_days):
                 )
         else:
             raise ValueError(f"tipo de disrupcion desconocido: {kind}")
+    return context
+
+
+def _alemanuel_context(case, with_disruptions, warm_up_days):
+    """Misma construccion que hidden_scenarios.create_context de Alemanuel."""
+    from maritime_data_context import Berth, DisruptionPlan, Vessel
+    from scenario_builders.baseline_stable_scenario import BaselineStableScenario
+
+    context = BaselineStableScenario.create()
+    structure = case.get("structure", {})
+
+    def route_named(route_id, allow_prefixed=False):
+        route = next((item for item in context.initial_service_routes if item.id == route_id), None)
+        if route is None and allow_prefixed:
+            route = next((item for item in context.initial_service_routes if item.id.endswith(route_id)), None)
+        if route is None:
+            raise ValueError(f"ruta desconocida: {route_id!r}")
+        return route
+
+    def port_named(name):
+        port = next((item for item in context.ports if item.name == name), None)
+        if port is None:
+            raise ValueError(f"puerto desconocido: {name!r}")
+        return port
+
+    demand_scale = float(structure.get("demand_scale", 1.0))
+    port_multipliers = structure.get("demand_port_multipliers", {})
+    for demand in context.demands:
+        multiplier = demand_scale
+        multiplier *= float(port_multipliers.get(demand.origin_port.name, 1.0))
+        multiplier *= float(port_multipliers.get(demand.destination_port.name, 1.0))
+        demand.annual_teus = max(1, int(round(demand.annual_teus * multiplier)))
+
+    distance_scale = float(structure.get("distance_scale", 1.0))
+    for leg in context.legs:
+        leg.sailing_distance *= distance_scale
+
+    speed_scale = float(structure.get("speed_scale", 1.0))
+    capacity_scale = float(structure.get("capacity_scale", 1.0))
+    for vessel_class in context.vessel_classes:
+        vessel_class.sailing_speed *= speed_scale
+        vessel_class.teu_capacity = max(1, int(round(vessel_class.teu_capacity * capacity_scale)))
+
+    for port_name, count in structure.get("berth_counts", {}).items():
+        port = port_named(port_name)
+        port.berths[:] = [Berth(index=index, port=port) for index in range(int(count))]
+
+    for route_id in set(structure.get("remove_routes", ())):
+        route = route_named(route_id)
+        for vessel in list(route.deployed_vessels):
+            context.vessels.remove(vessel)
+            vessel.vessel_class.vessels.remove(vessel)
+        route.deployed_vessels.clear()
+        context.service_routes.remove(route)
+        context.initial_service_routes.remove(route)
+        for segment in list(route.segments):
+            if segment in context.partial_service_routes:
+                context.partial_service_routes.remove(segment)
+            if segment in segment.associated_leg.segments:
+                segment.associated_leg.segments.remove(segment)
+
+    fleet_scale = float(structure.get("fleet_scale", 1.0))
+    requested = structure.get("route_fleet_counts", {})
+    for route in list(context.initial_service_routes):
+        desired = requested.get(route.id)
+        if desired is None:
+            desired = max(1, int(round(len(route.deployed_vessels) * fleet_scale)))
+        desired = int(desired)
+        current = len(route.deployed_vessels)
+        if desired < current:
+            for vessel in list(route.deployed_vessels[desired:]):
+                route.deployed_vessels.remove(vessel)
+                context.vessels.remove(vessel)
+                vessel.vessel_class.vessels.remove(vessel)
+        elif desired > current:
+            vessel_class = route.deployed_vessels[0].vessel_class
+            next_index = max((v.index for v in context.vessels), default=0) + 1
+            for index in range(next_index, next_index + desired - current):
+                vessel = Vessel(index, vessel_class, route)
+                route.deployed_vessels.append(vessel)
+                vessel_class.vessels.append(vessel)
+                context.vessels.append(vessel)
+
+    shift = float(structure.get("route_start_shift_days", 0.0))
+    for route in context.initial_service_routes:
+        route.start_day_of_week = (route.start_day_of_week + shift) % 7.0
+
+    prefix = str(structure.get("route_id_prefix", ""))
+    if prefix:
+        for route in context.initial_service_routes:
+            route.id = prefix + route.id
+
+    if not with_disruptions:
+        return context
+    for event in case.get("disruptions", ()):
+        start = float(event["start"]) + warm_up_days
+        duration = float(event["duration"])
+        if event["type"] == "leg":
+            route = route_named(event["route"], allow_prefixed=True)
+            segment = next(s for s in route.segments if s.sequence_index == int(event["sequence"]))
+            context.disruption_plans.append(
+                DisruptionPlan(
+                    target_leg=segment.associated_leg,
+                    start_offset_days=start,
+                    duration_days=duration,
+                    multiplier=float(event["multiplier"]),
+                )
+            )
+        else:
+            for berth in port_named(event["port"]).berths:
+                context.disruption_plans.append(
+                    DisruptionPlan(
+                        target_berth=berth,
+                        start_offset_days=start,
+                        duration_days=duration,
+                        close_berth=True,
+                    )
+                )
     return context
 
 
@@ -477,11 +678,44 @@ def report():
     by_label = {}
     for scenario, seed, label, loss, *_ in rows:
         by_label.setdefault(label, []).append(loss)
+    _report_alemanuel(rows)
     print("\nPromedio por variante (solo comparable si cubren los mismos escenarios):")
     for label, values in sorted(by_label.items()):
         print(f"  {label:<18} {sum(values) / len(values):8.3f}  ({len(values)} corridas)")
     if RESULTS_FILE.exists():
         print(f"\nTEU completados y tiempos por corrida: {RESULTS_FILE}")
+
+
+def _robust_score(losses):
+    """Misma formula que el optimizador de Alemanuel."""
+    import statistics
+
+    mean = statistics.fmean(losses)
+    deviation = statistics.pstdev(losses) if len(losses) > 1 else 0.0
+    return mean + 0.35 * deviation + 0.25 * max(0.0, max(losses) - mean)
+
+
+def _report_alemanuel(rows):
+    by_label = {}
+    for scenario, seed, label, loss, *_ in rows:
+        if scenario in ALEMANUEL_CASES and seed == "s2026":
+            by_label.setdefault(label, {})[scenario] = loss
+    if not by_label:
+        return
+    names = list(ALEMANUEL_CASES)
+    print("\nBanco de Alemanuel (7 casos, semilla 2026):")
+    print(f"{'corrida':<18}" + "".join(f"{name:>9}" for name in names) + f"{'promedio':>10}{'peor':>9}{'robusto':>9}")
+    candidates = dict(sorted(by_label.items()))
+    candidates["alemanuel_t28"] = ALEMANUEL_TRIAL28
+    for label, losses in candidates.items():
+        cells = "".join(f"{losses[name]:>9.2f}" if name in losses else f"{'-':>9}" for name in names)
+        if len(losses) == len(names):
+            values = [losses[name] for name in names]
+            summary = f"{sum(values) / len(values):>10.2f}{max(values):>9.2f}{_robust_score(values):>9.2f}"
+        else:
+            summary = f"{'(faltan ' + str(len(names) - len(losses)) + ' casos)':>28}"
+        print(f"{label:<18}{cells}{summary}")
+    print("Menor es mejor en todo. 'alemanuel_t28' son los numeros que reporto Alemanuel.")
 
 
 def main():

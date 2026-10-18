@@ -229,3 +229,26 @@ git commit -m "Ronda 3: resultados plan rapido"
 Guarda `Output/R3/` completo: son las curvas de cada prueba. Si preguntan cómo se
 desarrolló, la respuesta tiene que ser la verdadera, incluido el uso de asistentes de
 IA.
+
+## 8. Comparar contra el banco de Alemanuel (7 casos)
+
+`r3_bench.py` incluye los 7 casos de su optimizador (`a1`, `a2`, `a3`, `a5`, `a6`,
+`a7`, `a8`), copiados de su `hidden_scenarios.py` (verificado: generan exactamente
+los mismos contextos). El baseline es el default sin disrupciones, igual que en su
+banco, así que los loss son directamente comparables con su trial 28.
+
+```powershell
+.\.venv\Scripts\python.exe r3_bench.py plan alemanuel --workers 2
+```
+
+```powershell
+.\.venv\Scripts\python.exe r3_bench.py report
+```
+
+El `report` agrega una tabla con los 7 casos, el promedio, el peor caso y el
+**score robusto** con su misma fórmula (promedio + 0.35·desviación + 0.25·(peor −
+promedio)), y pone al lado los números de su trial 28 (`alemanuel_t28`: robusto
+8.35, promedio −2.62, peor 16.12). Menor es mejor.
+
+Son 14 corridas (7 baselines rápidos + 7 de `r3`). En una máquina con 7 núcleos
+usar `--workers 7`; en la tuya (2 núcleos), `--workers 2`.
