@@ -638,12 +638,14 @@ def run_jobs(jobs, workers):
     return failures
 
 
-def report():
-    if not RESULTS_ROOT.exists():
-        print("No hay resultados todavia.")
+def report(root=None):
+    root = Path(root) if root else RESULTS_ROOT
+    results_file = root / "results.csv"
+    if not root.exists():
+        print(f"No hay resultados en {root}.")
         return
     rows = []
-    for scenario_dir in sorted(path for path in RESULTS_ROOT.iterdir() if path.is_dir()):
+    for scenario_dir in sorted(path for path in root.iterdir() if path.is_dir()):
         for seed_dir in sorted(path for path in scenario_dir.iterdir() if path.is_dir()):
             baseline_path = seed_dir / "baseline.csv"
             official = PROJECT_ROOT / "Output" / "Baseline_ATT_By_Statistics_Interval.csv"
@@ -666,8 +668,8 @@ def report():
         print("No hay corridas completas con baseline.")
         return
     completed = {}
-    if RESULTS_FILE.exists():
-        with RESULTS_FILE.open(newline="", encoding="utf-8") as handle:
+    if results_file.exists():
+        with results_file.open(newline="", encoding="utf-8") as handle:
             for row in csv.DictReader(handle):
                 completed[(row["scenario"], f"s{row['seed']}", row["label"])] = row["completed_teu"]
     print(f"{'escenario':<10}{'semilla':<8}{'corrida':<18}{'loss':>9}{'penaliz.':>10}{'credito':>10}{'ATT':>8}{'TEU compl.':>12}")
@@ -682,8 +684,8 @@ def report():
     print("\nPromedio por variante (solo comparable si cubren los mismos escenarios):")
     for label, values in sorted(by_label.items()):
         print(f"  {label:<18} {sum(values) / len(values):8.3f}  ({len(values)} corridas)")
-    if RESULTS_FILE.exists():
-        print(f"\nTEU completados y tiempos por corrida: {RESULTS_FILE}")
+    if results_file.exists():
+        print(f"\nTEU completados y tiempos por corrida: {results_file}")
 
 
 def _robust_score(losses):
@@ -738,7 +740,8 @@ def main():
     plan.add_argument("name", choices=sorted(PLANS))
     plan.add_argument("--workers", type=int, default=1)
 
-    sub.add_parser("report", help="tabla de loss")
+    report_parser = sub.add_parser("report", help="tabla de loss")
+    report_parser.add_argument("--dir", default=None, help="carpeta de resultados (por defecto Output/R3)")
 
     hidden = sub.add_parser("_job")
     hidden.add_argument("payload")
@@ -775,7 +778,7 @@ def main():
         run_jobs(jobs, max(1, arguments.workers))
         return
     if arguments.command == "report":
-        report()
+        report(arguments.dir)
 
 
 if __name__ == "__main__":
