@@ -3,6 +3,37 @@
 Entrega: **23 de octubre de 2026**. Escenario oculto: pueden cambiar las disrupciones,
 la red, los puertos, los tramos, las rutas, la flota y la demanda.
 
+## 0. Estado actual: versión v2 (19 de octubre)
+
+`r3_strategy.py` incluye ahora el **espaciado de buques**. El simulador suelta los
+buques de cada ruta cada 7 días sin importar la duración del ciclo, lo que deja
+salidas desparejas (en R2 hay huecos de 0.4 a 7 días en la misma ruta). Un buque que
+va pegado al anterior toma un camino un poco más largo hecho de tramos existentes
+hasta que los huecos se emparejan. Así la carga espera menos en origen y en los
+transbordos. Durante el calentamiento actúa libremente. En el período medido solo
+hace ajustes de hasta 2.5 días, uno por buque cada medio ciclo, y nunca en rutas con
+un cierre o una congestión a menos de un ciclo.
+
+Medido en la nube con el mismo simulador (resultados idénticos a tu PC):
+
+| Escenario | `r3` original | **v2** | Alemanuel (trial 28) |
+|---|---|---|---|
+| Ronda 2, semilla 2026 | −15.94 | **−21.35** | 2.99 (generalizada) |
+| Ronda 2, semilla 2027 | −16.43 | **−27.60** | – |
+| Ronda 2, semilla 2028 | −16.86 | **−23.04** | – |
+| a1 tramos oceánicos | −30.30 | **−42.52** | −18.17 |
+| a2 cierre de Singapore | 11.27 | **−12.24** | 16.12 |
+| a3 flota escasa, demanda alta | −59.64 | **−93.90** | −30.76 |
+| a5 eventos solapados | −37.60 | **−44.71** | −19.03 |
+| a6 sin ruta S4 | −0.86 | **−10.63** | 10.49 |
+| a7 red renombrada y lenta | −44.42 | **−58.02** | 15.61 |
+| a8 choques cortos | −20.64 | **−21.35** | 7.40 |
+| h3 estrés (cierre de 40 días) | 48.05 | **40.54** | – |
+| **Score robusto (7 casos de Alemanuel)** | −8.68 | **−23.45** | 8.35 |
+
+v2 gana en los 11 casos. La carga completada nunca baja más de 0.7% (y en varios
+casos sube). Se desactiva con `--set phase=0` para comparar.
+
 ## 1. La decisión
 
 La entrega de la Ronda 2 **no sirve** para la Ronda 3: tiene un guardia
@@ -31,6 +62,7 @@ para cualquier red:
 | Seguimiento en vivo (`live`) | Registra cada llegada y salida de cada buque, proyecta sus próximas escalas y reserva en el buque que **de verdad sale primero**, en vez de suponer una espera media | Nuevo. En pruebas unitarias (sin simulación completa) predice la siguiente escala con 0.07 días de error medio. Se apaga solo si en la corrida el error medio pasa de 1.5 días |
 | Replanificación | Al llegar un buque a puerto, se reprograma la carga a bordo (y, en modo vivo, la que espera en ese puerto) **solo si** el plan nuevo llega al menos 1 día antes (2 días sin modo vivo) | Corrige el defecto de la R2: devolver `None` dejaba al default rehacer los planes por distancia |
 | Prioridad de muelle | Bajo congestión, primero el buque con más carga envejecida | Igual que la entrega R2 (peso calibrado 3612) |
+| Espaciado de buques (`phase`) | Empareja los huecos entre salidas de cada ruta desviando un poco al buque que va pegado al anterior (tramos existentes) | Medido: mejora los 11 escenarios probados (sección 0) |
 
 Por qué el modo en vivo es la apuesta: la métrica da **crédito** por cada período más
 rápido que el baseline, y el baseline es el default sin disrupciones. Los buques se
@@ -229,3 +261,26 @@ git commit -m "Ronda 3: resultados plan rapido"
 Guarda `Output/R3/` completo: son las curvas de cada prueba. Si preguntan cómo se
 desarrolló, la respuesta tiene que ser la verdadera, incluido el uso de asistentes de
 IA.
+
+## 8. Comparar contra el banco de Alemanuel (7 casos)
+
+`r3_bench.py` incluye los 7 casos de su optimizador (`a1`, `a2`, `a3`, `a5`, `a6`,
+`a7`, `a8`), copiados de su `hidden_scenarios.py` (verificado: generan exactamente
+los mismos contextos). El baseline es el default sin disrupciones, igual que en su
+banco, así que los loss son directamente comparables con su trial 28.
+
+```powershell
+.\.venv\Scripts\python.exe r3_bench.py plan alemanuel --workers 2
+```
+
+```powershell
+.\.venv\Scripts\python.exe r3_bench.py report
+```
+
+El `report` agrega una tabla con los 7 casos, el promedio, el peor caso y el
+**score robusto** con su misma fórmula (promedio + 0.35·desviación + 0.25·(peor −
+promedio)), y pone al lado los números de su trial 28 (`alemanuel_t28`: robusto
+8.35, promedio −2.62, peor 16.12). Menor es mejor.
+
+Son 14 corridas (7 baselines rápidos + 7 de `r3`). En una máquina con 7 núcleos
+usar `--workers 7`; en la tuya (2 núcleos), `--workers 2`.
