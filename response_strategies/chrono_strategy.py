@@ -105,6 +105,17 @@ class Params:
         return _env_float("WSC_CLOSURE_HOLD_MARGIN_DAYS", 1.0, 0.0, 30.0)
 
     @staticmethod
+    def rescue_closed_hub():
+        """Whether to rebuild a chain that still runs through a closed port.
+
+        Holding the plan is right in general, but a chain booked before a hub
+        closed keeps steering cargo into a port that cannot work it. That is
+        where the penalty concentrates in every run measured so far, so this
+        one case earns an exception.
+        """
+        return _env_flag("WSC_RESCUE_CLOSED_HUB", True)
+
+    @staticmethod
     def keep_plan_in_transit():
         """Whether to hold the assigned chain instead of letting the default
         strategy rebuild it with its distance-only metric."""
@@ -386,9 +397,21 @@ def find_earliest_path(context, now, origin, destination):
 
 
 def assign_bookings(context, now, shipment):
-    """Book the chain that lands the cargo earliest in the sailing calendar."""
+    """Book the chain that lands the cargo earliest in the sailing calendar.
+
+    Any failure degrades to ``None`` so the simulator's default strategy takes
+    over. In a scenario this code has never seen, falling back is worth far
+    more than failing loudly.
+    """
     if not Params.enabled():
         return None
+    try:
+        return _assign_bookings(context, now, shipment)
+    except Exception:
+        return None
+
+
+def _assign_bookings(context, now, shipment):
 
     origin = shipment.demand.origin_port
     destination = shipment.demand.destination_port
@@ -402,7 +425,10 @@ def assign_bookings(context, now, shipment):
 
     path, transit_days = find_earliest_path(context, now, origin, destination)
     if not path:
-        return False
+        # No path of our own: let the default try rather than parking the
+        # cargo. Holding it would stall this origin-destination pair for the
+        # whole run if our graph is wrong about the topology.
+        return None
 
     # Holding cargo for a closed destination only pays when it would still
     # arrive inside the window. Closures last days and transits last weeks, so
@@ -430,14 +456,97 @@ def assign_bookings(context, now, shipment):
 
 
 def adjust_bookings_before_cargo_handling(context, now, vessel):
-    """Hold the assigned chain instead of letting the default rebuild it.
+    """Hold the assigned chain, except when it still runs through a closed port.
 
     Returning ``None`` here hands the decision to the default strategy, whose
     distance-only rebuild undoes the schedule-aware chain this strategy chose.
+    Holding is therefore the rule. The exception is a chain booked before a
+    port closed: it keeps steering cargo into a berth that cannot work it, and
+    that case is where the loss concentrates. Rebuilding only those chains
+    keeps the cost off the great majority of arrivals.
     """
     if not Params.enabled() or not Params.keep_plan_in_transit():
         return None
+    if not Params.rescue_closed_hub():
+        return True
+    try:
+        _rescue_chains_through_closed_ports(context, now, vessel)
+    except Exception:
+        pass
     return True
+
+
+def _rescue_chains_through_closed_ports(context, now, vessel):
+    current_port = _arrival_port_of(vessel)
+    if current_port is None:
+        return
+
+    for shipment in list(getattr(vessel, "carried_shipments", ())):
+        destination = shipment.demand.destination_port
+        if current_port is destination:
+            continue
+        if not _chain_meets_closed_port(context, now, shipment):
+            continue
+
+        path, _ = find_earliest_path(context, now, current_port, destination)
+        if not path:
+            continue
+
+        index = shipment.current_booking_index
+        kept = [
+            booking
+            for booking in shipment.associated_bookings
+            if index is not None and booking.sequence_index < index
+        ]
+        _detach([b for b in shipment.associated_bookings if b not in kept])
+
+        rebuilt = list(kept)
+        next_index = len(kept) + 1
+        for offset, ride in enumerate(path):
+            booking = Booking(
+                sequence_index=next_index + offset,
+                shipment=shipment,
+                service_route=ride.route,
+                departure_segment_index=ride.departure_segment_index,
+                arrival_segment_index=ride.arrival_segment_index,
+            )
+            rebuilt.append(booking)
+            ride.route.associated_bookings.append(booking)
+
+        shipment.associated_bookings = rebuilt
+        shipment.current_booking_index = next_index
+
+
+def _arrival_port_of(vessel):
+    segment = getattr(vessel, "current_segment", None)
+    if segment is None or segment.associated_leg is None:
+        return None
+    return segment.associated_leg.arrival_port
+
+
+def _chain_meets_closed_port(context, now, shipment):
+    """True when the part of the chain still ahead calls at a closed port.
+
+    Deliberately cheap: a closure is checked at the current instant, not at the
+    estimated arrival, so this runs on every arrival without costing a search.
+    """
+    index = shipment.current_booking_index
+    if index is None:
+        return False
+    day = absolute_day(now)
+    for booking in shipment.associated_bookings:
+        if booking.sequence_index < index:
+            continue
+        route = booking.service_route
+        if route is None:
+            continue
+        for segment in route.segments:
+            leg = segment.associated_leg
+            if leg is None:
+                continue
+            if closure_end_day(context, leg.arrival_port, day) > day:
+                return True
+    return False
 
 
 def select_vessel_for_berth(

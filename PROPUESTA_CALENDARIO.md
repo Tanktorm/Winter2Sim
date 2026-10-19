@@ -88,3 +88,46 @@ python run_batch.py --baseline-only --seeds 2026 --days 10 --warmup 20
 El modelo del calendario es una **derivación**, no una lectura del estado real de los buques: supone reparto uniforme por el ciclo. Si el simulador coloca los buques de otra forma, las fases estarán desfasadas y el router elegirá conexiones que no existen — y entonces esto rendirá peor que el promedio de medio headway, que al menos no se equivoca sistemáticamente.
 
 Es la apuesta principal de la propuesta y solo la corrida la resuelve. Si sale mal, el diagnóstico está en el ATT: si sube mucho, las fases están mal; si baja poco, el calendario acierta pero el margen era menor de lo estimado.
+
+---
+
+## 9. Cambios de la v2
+
+Tres cambios, motivados por el banco de siete escenarios y por la descomposición
+del loss. Ninguno añade nombres de puertos, rutas ni fechas.
+
+### Rescate de cadenas que cruzan un puerto cerrado
+
+Mantener el plan en tránsito es la regla correcta —cederlo al default hace que lo
+rehaga con distancia pura y deshaga el trabajo del calendario—, pero tiene una
+excepción: una cadena reservada **antes** de que un puerto cerrara sigue dirigiendo
+carga a un muelle que no puede atenderla.
+
+Ahí es donde se concentra la penalización en todas las corridas medidas: los
+períodos 286–315 en la semilla 2026 y 291–320 en la 2027, los dos justo después del
+cierre del hub. Es la misma ventana en ambas semillas, o sea estructural.
+
+Ahora se reconstruye **solo** el tramo pendiente de los envíos cuya cadena todavía
+llama a un puerto cerrado. El filtro `_chain_meets_closed_port` es deliberadamente
+barato —comprueba el cierre en el instante actual, no en la llegada estimada— para
+que pueda correr en cada arribo sin pagar una búsqueda. Desactivable con
+`WSC_RESCUE_CLOSED_HUB=0`.
+
+### Degradación segura
+
+`assign_bookings` envuelve todo su cuerpo y devuelve `None` ante cualquier
+excepción, de modo que el default toma la decisión. Y cuando no encuentra camino
+propio **también** devuelve `None` en vez de retener la carga: antes la parqueaba,
+lo que en una topología que este código no entienda dejaría ese par origen-destino
+parado toda la corrida.
+
+En una evaluación a ciegas, ceder al default vale mucho más que fallar. El banco de
+siete escenarios mostró que una estrategia que se apaga puntúa como el default;
+una que revienta puntúa peor que todo.
+
+### Verificado sobre el grafo
+
+Con el hub cerrado en los días 400–414: en el día 405 un Shanghai→hub sale igual,
+porque sus 18.16 días de tránsito terminan mucho después de la reapertura; un
+Shanghai→Rotterdam sigue pasando por ahí porque lo cruza ya reabierto. La
+degradación segura devuelve `None` ante una entrada inválida.
