@@ -88,6 +88,9 @@ DEFAULTS = {
     "phase_measure_min_delay_days": 1.5,
     "phase_measure_max_extra_days": 2.5,
     "phase_measure_cooldown_cycles": 0.5,
+    # No spacing while a closure/congestion is this many cycles away.
+    "phase_guard_before_cycles": 1.0,
+    "phase_guard_after_cycles": 1.5,
 }
 
 _CONFIG = None
@@ -828,7 +831,11 @@ class _State:
         cycle = info.headway * info.count
         # A closure or a congested leg on this service bunches its vessels on
         # purpose; fighting that only delays cargo.  Stay out of it.
-        if self._route_disturbed(info, day - cycle, day + 1.5 * cycle + 10.0):
+        if self._route_disturbed(
+            info,
+            day - _cfg("phase_guard_before_cycles") * cycle,
+            day + _cfg("phase_guard_after_cycles") * cycle + 10.0,
+        ):
             return
         if measuring:
             last = self.last_spacing.get(vessel)
