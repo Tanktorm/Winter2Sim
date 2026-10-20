@@ -720,6 +720,69 @@ def _report_alemanuel(rows):
     print("Menor es mejor en todo. 'alemanuel_t28' son los numeros que reporto Alemanuel.")
 
 
+def _summary(rows, labels, combos):
+    """Promedio, peor caso y score robusto de cada variante sobre las mismas
+    combinaciones escenario-semilla."""
+    table = {}
+    for scenario, seed, label, loss, *_ in rows:
+        table[(label, scenario, seed)] = loss
+    print(f"\nResumen sobre {len(combos)} combinaciones escenario-semilla (menor es mejor):")
+    print(f"{'variante':<22}{'completas':>10}{'promedio':>10}{'peor':>9}{'robusto':>9}")
+    results = []
+    for label in labels:
+        values = [table[(label, scenario, seed)] for scenario, seed in combos if (label, scenario, seed) in table]
+        if len(values) == len(combos):
+            mean = sum(values) / len(values)
+            results.append((_robust_score(values), label, mean, max(values)))
+        else:
+            print(f"{label:<22}{len(values):>7}/{len(combos):<2}   (incompleta)")
+    for robust, label, mean, worst in sorted(results):
+        print(f"{label:<22}{len(combos):>7}/{len(combos):<2}{mean:>10.2f}{worst:>9.2f}{robust:>9.2f}")
+
+
+def _collect_rows(root):
+    """Loss de cada curva contra el baseline de su escenario y semilla."""
+    rows = []
+    for scenario_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+        for seed_dir in sorted(path for path in scenario_dir.iterdir() if path.is_dir()):
+            baseline_path = seed_dir / "baseline.csv"
+            if not baseline_path.exists():
+                continue
+            baseline = load_curve(baseline_path)
+            for curve in sorted(seed_dir.glob("*.csv")):
+                if curve.name == "baseline.csv":
+                    continue
+                periods = load_curve(curve)
+                if len(periods) != len(baseline):
+                    continue
+                loss, _, _ = cumulative_loss(baseline, periods)
+                rows.append((scenario_dir.name, seed_dir.name, curve.stem, loss))
+    return rows
+
+
+def tune(scenarios, seeds, variants, workers):
+    """Corre cada variante en cada escenario y semilla (con su baseline) y
+    ordena las variantes por score robusto."""
+    jobs = []
+    for scenario in scenarios:
+        for seed in seeds:
+            jobs.append(_job(scenario, "baseline", seed, "baseline", {}))
+            for name, overrides in variants:
+                jobs.append(_job(scenario, "r3", seed, name, overrides))
+    run_jobs(jobs, workers)
+    combos = [(scenario, f"s{seed}") for scenario in scenarios for seed in seeds]
+    _summary(_collect_rows(RESULTS_ROOT), [name for name, _ in variants], combos)
+
+
+def _parse_variant(text):
+    name, _, settings = text.partition(":")
+    overrides = {}
+    for item in filter(None, settings.split(",")):
+        key, _, value = item.partition("=")
+        overrides[key.strip()] = value.strip()
+    return name.strip(), overrides
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -739,6 +802,15 @@ def main():
     plan = sub.add_parser("plan", help="lista de corridas predefinida")
     plan.add_argument("name", choices=sorted(PLANS))
     plan.add_argument("--workers", type=int, default=1)
+
+    tune_parser = sub.add_parser("tune", help="probar configuraciones de r3 en varios escenarios")
+    tune_parser.add_argument("--scenarios", default="r2,a1,a2,a3,a5,a6,a7,a8,h3")
+    tune_parser.add_argument("--seeds", default="2026")
+    tune_parser.add_argument(
+        "--variant", action="append", default=[],
+        help="nombre:clave=valor,clave=valor (repetible; 'nombre:' sin claves = configuracion por defecto)",
+    )
+    tune_parser.add_argument("--workers", type=int, default=1)
 
     report_parser = sub.add_parser("report", help="tabla de loss")
     report_parser.add_argument("--dir", default=None, help="carpeta de resultados (por defecto Output/R3)")
@@ -776,6 +848,15 @@ def main():
     if arguments.command == "plan":
         jobs = [_job(*item) for item in PLANS[arguments.name]]
         run_jobs(jobs, max(1, arguments.workers))
+        return
+    if arguments.command == "tune":
+        scenarios = [item.strip() for item in arguments.scenarios.split(",") if item.strip()]
+        unknown = [item for item in scenarios if item not in SCENARIOS]
+        if unknown:
+            parser.error(f"escenarios desconocidos: {unknown}")
+        seeds = [int(item) for item in arguments.seeds.split(",") if item.strip()]
+        variants = [_parse_variant(item) for item in arguments.variant] or [("r3_actual", {})]
+        tune(scenarios, seeds, variants, max(1, arguments.workers))
         return
     if arguments.command == "report":
         report(arguments.dir)
