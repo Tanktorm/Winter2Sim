@@ -9,7 +9,7 @@ dónde está guardado cada cosa.
 **La mejor propuesta medida es `r3_strategy.py` versión v2** (rama
 `claude/kind-cori-b7g371` de `Tanktorm/Winter2Sim`). En el banco de 7 escenarios de
 Alemanuel tiene score robusto **−23.45**, contra 6.96 de su versión corregida y 8.35
-de su v5. Gana en los 7 casos. Ver la tabla de la sección 3.
+de su v5. Gana en los 7 casos. Ver la tabla de la sección 3. Chrono v2, la otra propuesta reciente, queda peor que el default (sección 4).
 
 ## 2. Una confusión de nombres que cambió la conclusión del equipo
 
@@ -56,7 +56,25 @@ Otros escenarios medidos con v2:
 | Ronda 2, semilla 2028 | −16.86 | **−23.04** |
 | h3: cierre de 40 días de Tanger Med | 48.05 | **40.54** (default: 123.13) |
 
-## 4. Lo que reportó Codex sobre la versión corregida de Alemanuel
+## 4. Chrono v2 (la otra sesión): descartada
+
+La propuesta "calendario v2" (rama `propuesta/calendario-real-v2`) se midió con el
+mismo banco y la misma semilla:
+
+| Escenario | Chrono v2 | Default | Nuestro v2 |
+|---|---|---|---|
+| Ronda 2 oficial | **+60.34** | 34.57 | −21.35 |
+| a1 desvíos oceánicos | **+24.79** | 46.74 | −42.52 |
+| a7 red renombrada | **+16.02** | 15.61 | −58.02 |
+| a2 cierre de hub | corrida detenida: tránsito medio de 36.7 días al día 240 (baseline ~14) | 83.55 | −12.24 |
+
+Queda peor que el default en la Ronda 2 y en a7. La causa es la que se anticipó como
+riesgo cuando se propuso: el calendario supone buques repartidos uniformemente por el
+ciclo, pero el simulador los suelta cada 7 días y luego derivan, así que reserva
+conexiones que no existen. Además es 2–3 veces más lenta (40–55 min por corrida
+contra ~25).
+
+## 5. Lo que reportó Codex sobre la versión corregida de Alemanuel
 
 - La estrategia ya no apaga el ruteo ni la prioridad de atraque cuando no detecta un
   desvío rentable (antes caía al default). Eso explica el salto del caso 07, de 15.61
@@ -66,7 +84,7 @@ Otros escenarios medidos con v2:
 - El costo de cómputo casi se duplicó (35–44 min por escenario contra 16–21), y solo
   se probó una semilla.
 
-## 5. Dónde está guardado cada cosa
+## 6. Dónde está guardado cada cosa
 
 | Qué | Dónde | ¿En GitHub? |
 |---|---|---|
@@ -80,7 +98,7 @@ Otros escenarios medidos con v2:
 
 Git no guarda nada solo: lo que no se hace `push` existe únicamente en esa máquina.
 
-## 6. Cómo subir a GitHub los avances de tu PC
+## 7. Cómo subir a GitHub los avances de tu PC
 
 En VS Code, un comando a la vez. Se sube a **tu** repositorio (`tanktorm`), sin
 tocar el del equipo:
@@ -117,7 +135,7 @@ git push tanktorm ronda3
 Si `git status` muestra archivos que no quieres subir (logs, carpetas de respaldo),
 no los incluyas en el `git add`: solo se sube lo que nombras.
 
-## 7. Qué entregar
+## 8. Qué entregar
 
 `response_strategies/` con `__init__.py`, `default_strategy.py` y
 `strategy_validation.py` sin cambios, más `user_strategy.py` y `r3_strategy.py` (v2)
