@@ -26,6 +26,10 @@ Components (every one can be switched off with an environment variable, see
 4. Replanning (``replan``).  When a vessel reaches a port, carried cargo (and,
    with ``rebook_waiting``, cargo waiting at that port) is rebooked only when
    the new plan arrives clearly earlier.
+5. Even spacing (``phase``).  A vessel running too close behind the one ahead
+   of it takes a slightly longer path made of existing legs.  During the
+   measured period a loaded vessel is only nudged; a nearly empty one (a
+   follower in a bunch, e.g. after a long port closure) is moved as needed.
 """
 
 from __future__ import annotations
@@ -77,9 +81,8 @@ DEFAULTS = {
     # simulator releases vessels every 7 days whatever the cycle length, which
     # leaves uneven headways; a vessel running too close to the one ahead takes
     # a slightly longer path made of existing legs until the gaps even out.
-    # By default this only runs until shortly before the measured period.
     "phase": 1.0,
-    "phase_until_day": -1.0,  # -1: WARM_UP_DAYS - 25
+    "phase_until_day": -1.0,  # end of the warm-up limits; -1: WARM_UP_DAYS - 25
     "phase_min_delay_days": 0.75,
     "phase_tolerance_days": 0.3,
     # Keep spacing during the measured period too, more cautiously: cargo on
@@ -88,13 +91,14 @@ DEFAULTS = {
     "phase_measure_min_delay_days": 1.5,
     "phase_measure_max_extra_days": 2.5,
     "phase_measure_cooldown_cycles": 0.5,
-    # No spacing while a closure/congestion is this many cycles away.
-    "phase_guard_before_cycles": 1.0,
+    # No spacing while a closure/congestion on the service ended less than
+    # ``before`` cycles ago or starts within ``after`` cycles (+10 days).
+    "phase_guard_before_cycles": 0.25,
     "phase_guard_after_cycles": 1.5,
     # A vessel leaving with at most this fraction of the cargo usually loaded
     # at that call (a follower in a bunch) is spaced with the warm-up limits
     # during the measured period too: delaying it costs little.  0: off.
-    "phase_light_ratio": 0.0,
+    "phase_light_ratio": 0.5,
 }
 
 _CONFIG = None
