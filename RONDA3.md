@@ -31,7 +31,7 @@ Medido en la nube con el mismo simulador (resultados idénticos a tu PC):
 |---|---|---|---|---|
 | Ronda 2, semilla 2026 | −15.94 | −21.35 | **−28.61** | – |
 | Ronda 2, semilla 2027 | −16.43 | −27.60 | **−32.90** | – |
-| Ronda 2, semilla 2028 | −16.86 | −23.04 | en curso | – |
+| Ronda 2, semilla 2028 | −16.86 | −23.04 | **−34.41** | – |
 | a1 tramos oceánicos | −30.30 | −42.52 | **−48.56** | −19.37 |
 | a2 cierre de Singapore | 11.27 | −12.24 | **−35.26** | 24.95 |
 | a3 flota escasa, demanda alta | −59.64 | −93.90 | **−108.86** | −25.40 |
@@ -42,7 +42,7 @@ Medido en la nube con el mismo simulador (resultados idénticos a tu PC):
 | h3 estrés (cierre de 40 días) | 48.05 | 40.54 | **−4.27** | – |
 | **Score robusto (7 casos de Alemanuel)** | −8.68 | −23.45 | **−37.08** | 5.71 |
 
-v3 gana en todos los casos ya medidos y completa más carga en todos. Para comparar con v2: `--set phase_light_ratio=0 --set phase_guard_before_cycles=1`.
+v3 gana en los 11 casos (promedio −42.73 contra −28.62 de v2) y completa más carga en todos. Para comparar con v2: `--set phase_light_ratio=0 --set phase_guard_before_cycles=1`.
 
 ## 1. La decisión
 
