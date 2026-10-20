@@ -1,4 +1,4 @@
-# Estado de la Ronda 3: revisión completa (20 de octubre)
+# Estado de la Ronda 3: revisión completa (20 de octubre, v3)
 
 Entrega: **23 de octubre**. Este documento junta lo último que sacó Alemanuel, lo que
 se comparó en la sesión "Estrategia Winte2Sim optimizada", nuestros resultados y
@@ -6,10 +6,11 @@ dónde está guardado cada cosa.
 
 ## 1. Conclusión
 
-**La mejor propuesta medida es `r3_strategy.py` versión v2** (rama
+**La mejor propuesta medida es `r3_strategy.py` versión v3** (rama
 `claude/kind-cori-b7g371` de `Tanktorm/Winter2Sim`). En el banco de 7 escenarios de
-Alemanuel tiene score robusto **−23.45**, contra 6.96 de su versión corregida y 8.35
-de su v5. Gana en los 7 casos. Ver la tabla de la sección 3. Chrono v2, la otra propuesta reciente, queda peor que el default (sección 4).
+Alemanuel le gana, en cada caso ya medido, a su v6 (trial 9, score robusto 5.71), a
+su versión corregida (6.96) y a su v5 (8.35); ver la tabla de la sección 3. Chrono
+v2, la otra propuesta reciente, queda peor que el default (sección 4).
 
 ## 2. Una confusión de nombres que cambió la conclusión del equipo
 
@@ -27,17 +28,17 @@ escenarios (definiciones copiadas de `hidden_scenarios.py`, verificadas idéntic
 
 ## 3. Banco de Alemanuel, semilla 2026 (loss, menor es mejor)
 
-| Caso | "r3" de AleM = default | v5 (trial 28) | Corregida (Codex) | Nuestro r3 | **Nuestro v2** |
-|---|---|---|---|---|---|
-| 01 desvíos oceánicos | 46.74 | −18.17 | −17.39 | −30.30 | **−42.52** |
-| 02 cierre de hub | 83.55 | 16.12 | 23.35 | 11.27 | **−12.24** |
-| 03 flota escasa, demanda alta | 17.42 | −30.76 | −26.57 | −59.64 | **−93.90** |
-| 05 disrupciones en un servicio | 40.15 | −19.03 | −17.81 | −37.60 | **−44.71** |
-| 06 topología distinta | 29.72 | 10.49 | 10.95 | −0.86 | **−10.63** |
-| 07 red renombrada y lenta | 15.61 | 15.61 | −18.21 | −44.42 | **−58.02** |
-| 08 disrupciones rápidas | −0.11 | 7.40 | 0.53 | −20.64 | **−21.35** |
-| **Promedio** | 33.30 | −2.62 | −6.45 | −26.03 | **−40.48** |
-| **Score robusto** | 54.68 | 8.35 | 6.96 | −8.68 | **−23.45** |
+| Caso | "r3" de AleM = default | v5 (trial 28) | Corregida (Codex) | v6 (trial 9) | Nuestro v2 | **Nuestro v3** |
+|---|---|---|---|---|---|---|
+| 01 desvíos oceánicos | 46.74 | −18.17 | −17.39 | −19.37 | −42.52 | **−48.56** |
+| 02 cierre de hub | 83.55 | 16.12 | 23.35 | 24.95 | −12.24 | **−35.26** |
+| 03 flota escasa, demanda alta | 17.42 | −30.76 | −26.57 | −25.40 | −93.90 | **−108.86** |
+| 05 disrupciones en un servicio | 40.15 | −19.03 | −17.81 | −13.64 | −44.71 | en curso |
+| 06 topología distinta | 29.72 | 10.49 | 10.95 | 4.80 | −10.63 | **−26.62** |
+| 07 red renombrada y lenta | 15.61 | 15.61 | −18.21 | −19.11 | −58.02 | **−62.73** |
+| 08 disrupciones rápidas | −0.11 | 7.40 | 0.53 | −10.08 | −21.35 | **−29.22** |
+| **Promedio** | 33.30 | −2.62 | −6.45 | −8.26 | −40.48 | en curso |
+| **Score robusto** | 54.68 | 8.35 | 6.96 | 5.71 | −23.45 | en curso |
 
 Fórmula del score robusto, la misma de Alemanuel: promedio + 0.35·desviación +
 0.25·(peor − promedio).
@@ -45,16 +46,23 @@ Fórmula del score robusto, la misma de Alemanuel: promedio + 0.35·desviación 
 Las columnas de AleM y Codex son las que ellos reportaron. Las nuestras salen de
 simulaciones completas (140 días de calentamiento + 360 medidos) con los mismos
 escenarios, y son reproducibles: la misma corrida en la PC de Andrés da exactamente
-el mismo número.
+el mismo número. La columna "r3" del reporte de v6 sigue siendo la de la sección 2
+(la estrategia de la Ronda 2 con guardia, que juega el default), no nuestro r3.
 
-Otros escenarios medidos con v2:
+Otros escenarios:
 
-| Escenario | r3 | v2 |
-|---|---|---|
-| Ronda 2 oficial, semilla 2026 | −15.94 | **−21.35** |
-| Ronda 2, semilla 2027 | −16.43 | **−27.60** |
-| Ronda 2, semilla 2028 | −16.86 | **−23.04** |
-| h3: cierre de 40 días de Tanger Med | 48.05 | **40.54** (default: 123.13) |
+| Escenario | r3 | v2 | **v3** |
+|---|---|---|---|
+| Ronda 2 oficial, semilla 2026 | −15.94 | −21.35 | **−28.61** |
+| Ronda 2, semilla 2027 | −16.43 | −27.60 | **−32.90** |
+| Ronda 2, semilla 2028 | −16.86 | −23.04 | en curso |
+| h3: cierre de 40 días de Tanger Med | 48.05 | 40.54 | **−4.27** (default: 123.13) |
+
+Qué cambió de v2 a v3: ver la sección 0 de `RONDA3.md`. En resumen, después de un
+cierre largo los buques de la ruta quedan amontonados; el primero lleva casi toda la
+carga y los de atrás van casi vacíos. v3 espacia a esos buques casi vacíos sin los
+límites del período medido, porque retrasarlos cuesta poco, y vuelve a espaciar 0.25
+ciclos después de cada disrupción en vez de 1.
 
 ## 4. Chrono v2 (la otra sesión): descartada
 
@@ -88,7 +96,7 @@ contra ~25).
 
 | Qué | Dónde | ¿En GitHub? |
 |---|---|---|
-| Estrategia v2, banco, guías, resultados de la nube, reporte | `Tanktorm/Winter2Sim`, rama `claude/kind-cori-b7g371` (PR #3) | Sí |
+| Estrategia v3, banco, guías, resultados de la nube, reporte | `Tanktorm/Winter2Sim`, rama `claude/kind-cori-b7g371` (PR #3) | Sí |
 | Chrono v2 (calendario de salidas) | `Tanktorm/Winter2Sim`, rama `propuesta/calendario-real-v2` | Sí |
 | v5 y optimizador de Alemanuel (hasta el 17-oct) | `alemanuel18/SimulationChallenge2026_Py_Round2`, rama `propuesta/alemanuel1_Round3` | Sí |
 | Versión corregida de Alemanuel (reporte Codex) | Solo en la máquina de Alemanuel | **No** |
@@ -138,6 +146,6 @@ no los incluyas en el `git add`: solo se sube lo que nombras.
 ## 8. Qué entregar
 
 `response_strategies/` con `__init__.py`, `default_strategy.py` y
-`strategy_validation.py` sin cambios, más `user_strategy.py` y `r3_strategy.py` (v2)
+`strategy_validation.py` sin cambios, más `user_strategy.py` y `r3_strategy.py` (v3)
 de la rama `claude/kind-cori-b7g371`. Antes de entregar, una corrida con
 `main.py` para confirmar que todo funciona como lo harán los jueces.
