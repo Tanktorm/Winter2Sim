@@ -35,12 +35,12 @@ Medido en la nube con el mismo simulador (resultados idénticos a tu PC):
 | a1 tramos oceánicos | −30.30 | −42.52 | **−48.56** | −19.37 |
 | a2 cierre de Singapore | 11.27 | −12.24 | **−35.26** | 24.95 |
 | a3 flota escasa, demanda alta | −59.64 | −93.90 | **−108.86** | −25.40 |
-| a5 eventos solapados | −37.60 | −44.71 | en curso | −13.64 |
+| a5 eventos solapados | −37.60 | −44.71 | **−58.59** | −13.64 |
 | a6 sin ruta S4 | −0.86 | −10.63 | **−26.62** | 4.80 |
 | a7 red renombrada y lenta | −44.42 | −58.02 | **−62.73** | −19.11 |
 | a8 choques cortos | −20.64 | −21.35 | **−29.22** | −10.08 |
 | h3 estrés (cierre de 40 días) | 48.05 | 40.54 | **−4.27** | – |
-| **Score robusto (7 casos de Alemanuel)** | −8.68 | −23.45 | en curso | 5.71 |
+| **Score robusto (7 casos de Alemanuel)** | −8.68 | −23.45 | **−37.08** | 5.71 |
 
 v3 gana en todos los casos ya medidos y completa más carga en todos. Para comparar con v2: `--set phase_light_ratio=0 --set phase_guard_before_cycles=1`.
 
