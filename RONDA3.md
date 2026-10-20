@@ -27,21 +27,21 @@ v3 hace dos cambios:
 
 Medido en la nube con el mismo simulador (resultados idénticos a tu PC):
 
-| Escenario | `r3` original | v2 | **v3** | Alemanuel v6 (trial 9) |
+| Escenario | `r3` original | v2 | **v3** | Alemanuel v6 (trial 21) |
 |---|---|---|---|---|
 | Ronda 2, semilla 2026 | −15.94 | −21.35 | **−28.61** | – |
 | Ronda 2, semilla 2027 | −16.43 | −27.60 | **−32.90** | – |
 | Ronda 2, semilla 2028 | −16.86 | −23.04 | **−34.41** | – |
-| a1 tramos oceánicos | −30.30 | −42.52 | **−48.56** | −19.37 |
-| a2 cierre de Singapore | 11.27 | −12.24 | **−35.26** | 24.95 |
-| a3 flota escasa, demanda alta | −59.64 | −93.90 | **−108.86** | −25.40 |
-| a5 eventos solapados | −37.60 | −44.71 | **−58.59** | −13.64 |
-| a6 sin ruta S4 | −0.86 | −10.63 | **−26.62** | 4.80 |
-| a7 red renombrada y lenta | −44.42 | −58.02 | **−62.73** | −19.11 |
-| a8 choques cortos | −20.64 | −21.35 | **−29.22** | −10.08 |
+| a1 tramos oceánicos | −30.30 | −42.52 | **−48.56** | −21.23 |
+| a2 cierre de Singapore | 11.27 | −12.24 | **−35.26** | 19.70 |
+| a3 flota escasa, demanda alta | −59.64 | −93.90 | **−108.86** | −38.29 |
+| a5 eventos solapados | −37.60 | −44.71 | **−58.59** | −5.17 |
+| a6 sin ruta S4 | −0.86 | −10.63 | **−26.62** | −0.21 |
+| a7 red renombrada y lenta | −44.42 | −58.02 | **−62.73** | −10.42 |
+| a8 choques cortos | −20.64 | −21.35 | **−29.22** | −5.68 |
 | h2 red modificada (otra flota, menos muelles, demanda ×1.3) | – | −12.19 | **−26.58** | – |
 | h3 estrés (cierre de 40 días) | 48.05 | 40.54 | **−4.27** | – |
-| **Score robusto (7 casos de Alemanuel)** | −8.68 | −23.45 | **−37.08** | 5.71 |
+| **Score robusto (7 casos de Alemanuel)** | −8.68 | −23.45 | **−37.08** | 4.18 |
 
 v3 gana en los 12 casos (promedio −41.39 contra −27.25 de v2) y completa más carga en todos. Para comparar con v2: `--set phase_light_ratio=0 --set phase_guard_before_cycles=1`.
 

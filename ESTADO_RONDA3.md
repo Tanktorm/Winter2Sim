@@ -8,7 +8,7 @@ dónde está guardado cada cosa.
 
 **La mejor propuesta medida es `r3_strategy.py` versión v3** (rama
 `claude/kind-cori-b7g371` de `Tanktorm/Winter2Sim`). En el banco de 7 escenarios de
-Alemanuel tiene score robusto **−37.08** y le gana en los 7 casos a su v6 (trial 9, 5.71), a
+Alemanuel tiene score robusto **−37.08** y le gana en los 7 casos a su v6 (trial 21, 4.18), a
 su versión corregida (6.96) y a su v5 (8.35); ver la tabla de la sección 3. Chrono
 v2, la otra propuesta reciente, queda peor que el default (sección 4).
 
@@ -28,17 +28,17 @@ escenarios (definiciones copiadas de `hidden_scenarios.py`, verificadas idéntic
 
 ## 3. Banco de Alemanuel, semilla 2026 (loss, menor es mejor)
 
-| Caso | "r3" de AleM = default | v5 (trial 28) | Corregida (Codex) | v6 (trial 9) | Nuestro v2 | **Nuestro v3** |
+| Caso | "r3" de AleM = default | v5 (trial 28) | Corregida (Codex) | v6 (trial 21) | Nuestro v2 | **Nuestro v3** |
 |---|---|---|---|---|---|---|
-| 01 desvíos oceánicos | 46.74 | −18.17 | −17.39 | −19.37 | −42.52 | **−48.56** |
-| 02 cierre de hub | 83.55 | 16.12 | 23.35 | 24.95 | −12.24 | **−35.26** |
-| 03 flota escasa, demanda alta | 17.42 | −30.76 | −26.57 | −25.40 | −93.90 | **−108.86** |
-| 05 disrupciones en un servicio | 40.15 | −19.03 | −17.81 | −13.64 | −44.71 | **−58.59** |
-| 06 topología distinta | 29.72 | 10.49 | 10.95 | 4.80 | −10.63 | **−26.62** |
-| 07 red renombrada y lenta | 15.61 | 15.61 | −18.21 | −19.11 | −58.02 | **−62.73** |
-| 08 disrupciones rápidas | −0.11 | 7.40 | 0.53 | −10.08 | −21.35 | **−29.22** |
-| **Promedio** | 33.30 | −2.62 | −6.45 | −8.26 | −40.48 | **−52.84** |
-| **Score robusto** | 54.68 | 8.35 | 6.96 | 5.71 | −23.45 | **−37.08** |
+| 01 desvíos oceánicos | 46.74 | −18.17 | −17.39 | −21.23 | −42.52 | **−48.56** |
+| 02 cierre de hub | 83.55 | 16.12 | 23.35 | 19.70 | −12.24 | **−35.26** |
+| 03 flota escasa, demanda alta | 17.42 | −30.76 | −26.57 | −38.29 | −93.90 | **−108.86** |
+| 05 disrupciones en un servicio | 40.15 | −19.03 | −17.81 | −5.17 | −44.71 | **−58.59** |
+| 06 topología distinta | 29.72 | 10.49 | 10.95 | −0.21 | −10.63 | **−26.62** |
+| 07 red renombrada y lenta | 15.61 | 15.61 | −18.21 | −10.42 | −58.02 | **−62.73** |
+| 08 disrupciones rápidas | −0.11 | 7.40 | 0.53 | −5.68 | −21.35 | **−29.22** |
+| **Promedio** | 33.30 | −2.62 | −6.45 | −8.76 | −40.48 | **−52.84** |
+| **Score robusto** | 54.68 | 8.35 | 6.96 | 4.18 | −23.45 | **−37.08** |
 
 Fórmula del score robusto, la misma de Alemanuel: promedio + 0.35·desviación +
 0.25·(peor − promedio).
