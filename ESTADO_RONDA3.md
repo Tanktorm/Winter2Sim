@@ -56,6 +56,7 @@ Otros escenarios:
 | Ronda 2 oficial, semilla 2026 | −15.94 | −21.35 | **−28.61** |
 | Ronda 2, semilla 2027 | −16.43 | −27.60 | **−32.90** |
 | Ronda 2, semilla 2028 | −16.86 | −23.04 | **−34.41** |
+| h2: otra flota, menos muelles, demanda ×1.3 | – | −12.19 | **−26.58** |
 | h3: cierre de 40 días de Tanger Med | 48.05 | 40.54 | **−4.27** (default: 123.13) |
 
 Qué cambió de v2 a v3: ver la sección 0 de `RONDA3.md`. En resumen, después de un

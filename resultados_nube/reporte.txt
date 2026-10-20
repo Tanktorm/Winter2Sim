@@ -21,6 +21,8 @@ a7        s2026   r3_v3               -62.733     0.000   -62.733  16.936      4
 a8        s2026   r3_anterior         -20.635     0.355   -20.990  13.189      491172
 a8        s2026   r3_v2               -21.348     0.286   -21.634  13.165      490481
 a8        s2026   r3_v3               -29.224     0.348   -29.572  12.901      490759
+h2        s2026   r3_v2               -12.189     1.085   -13.273  13.521      637018
+h2        s2026   r3_v3               -26.577     0.087   -26.663  13.010      641908
 h3        s2026   r3_anterior          48.049    52.822    -4.773  16.378      483855
 h3        s2026   r3_v2                40.542    46.131    -5.589  15.943      484296
 h3        s2026   r3_v3                -4.266    17.993   -22.259  13.962      492530
@@ -44,7 +46,7 @@ Menor es mejor en todo. 'alemanuel_t28' son los numeros que reporto Alemanuel.
 
 Promedio por variante (solo comparable si cubren los mismos escenarios):
   r3_anterior         -16.670  (11 corridas)
-  r3_v2               -28.619  (11 corridas)
-  r3_v3               -42.731  (11 corridas)
+  r3_v2               -27.250  (12 corridas)
+  r3_v3               -41.385  (12 corridas)
 
 TEU completados y tiempos por corrida: resultados_nube/results.csv

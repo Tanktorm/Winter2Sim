@@ -39,10 +39,11 @@ Medido en la nube con el mismo simulador (resultados idénticos a tu PC):
 | a6 sin ruta S4 | −0.86 | −10.63 | **−26.62** | 4.80 |
 | a7 red renombrada y lenta | −44.42 | −58.02 | **−62.73** | −19.11 |
 | a8 choques cortos | −20.64 | −21.35 | **−29.22** | −10.08 |
+| h2 red modificada (otra flota, menos muelles, demanda ×1.3) | – | −12.19 | **−26.58** | – |
 | h3 estrés (cierre de 40 días) | 48.05 | 40.54 | **−4.27** | – |
 | **Score robusto (7 casos de Alemanuel)** | −8.68 | −23.45 | **−37.08** | 5.71 |
 
-v3 gana en los 11 casos (promedio −42.73 contra −28.62 de v2) y completa más carga en todos. Para comparar con v2: `--set phase_light_ratio=0 --set phase_guard_before_cycles=1`.
+v3 gana en los 12 casos (promedio −41.39 contra −27.25 de v2) y completa más carga en todos. Para comparar con v2: `--set phase_light_ratio=0 --set phase_guard_before_cycles=1`.
 
 ## 1. La decisión
 
