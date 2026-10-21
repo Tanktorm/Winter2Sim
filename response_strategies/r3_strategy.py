@@ -26,6 +26,10 @@ Components (every one can be switched off with an environment variable, see
 4. Replanning (``replan``).  When a vessel reaches a port, carried cargo (and,
    with ``rebook_waiting``, cargo waiting at that port) is rebooked only when
    the new plan arrives clearly earlier.
+5. Even spacing (``phase``).  A vessel running too close behind the one ahead
+   of it takes a slightly longer path made of existing legs.  During the
+   measured period a loaded vessel is only nudged; a nearly empty one (a
+   follower in a bunch, e.g. after a long port closure) is moved as needed.
 """
 
 from __future__ import annotations
@@ -77,9 +81,8 @@ DEFAULTS = {
     # simulator releases vessels every 7 days whatever the cycle length, which
     # leaves uneven headways; a vessel running too close to the one ahead takes
     # a slightly longer path made of existing legs until the gaps even out.
-    # By default this only runs until shortly before the measured period.
     "phase": 1.0,
-    "phase_until_day": -1.0,  # -1: WARM_UP_DAYS - 25
+    "phase_until_day": -1.0,  # end of the warm-up limits; -1: WARM_UP_DAYS - 25
     "phase_min_delay_days": 0.75,
     "phase_tolerance_days": 0.3,
     # Keep spacing during the measured period too, more cautiously: cargo on
@@ -88,9 +91,14 @@ DEFAULTS = {
     "phase_measure_min_delay_days": 1.5,
     "phase_measure_max_extra_days": 2.5,
     "phase_measure_cooldown_cycles": 0.5,
-    # No spacing while a closure/congestion is this many cycles away.
-    "phase_guard_before_cycles": 1.0,
+    # No spacing while a closure/congestion on the service ended less than
+    # ``before`` cycles ago or starts within ``after`` cycles (+10 days).
+    "phase_guard_before_cycles": 0.25,
     "phase_guard_after_cycles": 1.5,
+    # A vessel leaving with at most this fraction of the cargo usually loaded
+    # at that call (a follower in a bunch) is spaced with the warm-up limits
+    # during the measured period too: delaying it costs little.  0: off.
+    "phase_light_ratio": 0.5,
 }
 
 _CONFIG = None
@@ -402,6 +410,7 @@ class _State:
                 self.legs_from.setdefault(leg.departure_port, []).append(leg)
         self.phase_end = _phase_end()
         self.last_spacing = {}
+        self.depart_load = {}
 
     # -- failure handling ---------------------------------------------------
 
@@ -837,7 +846,10 @@ class _State:
             day + _cfg("phase_guard_after_cycles") * cycle + 10.0,
         ):
             return
-        if measuring:
+        current = vessel.current_segment
+        position = (current.sequence_index % info.n) if current is not None else 0
+        strict = measuring and not self._light_vessel(vessel, route, position)
+        if strict:
             last = self.last_spacing.get(vessel)
             if last is not None and day - last < _cfg("phase_measure_cooldown_cycles") * cycle:
                 return
@@ -845,17 +857,15 @@ class _State:
         if not delays:
             return
         need = delays.get(vessel, 0.0)
-        minimum = _cfg("phase_measure_min_delay_days") if measuring else _cfg("phase_min_delay_days")
+        minimum = _cfg("phase_measure_min_delay_days") if strict else _cfg("phase_min_delay_days")
         if need < minimum:
             return
-        if measuring:
+        if strict:
             need = min(need, _cfg("phase_measure_max_extra_days"))
-        current = vessel.current_segment
-        position = (current.sequence_index % info.n) if current is not None else 0
         choice = self._delay_path(info, position, need, vessel, day)
         if choice is None:
             return
-        if measuring and choice[0] > _cfg("phase_measure_max_extra_days"):
+        if strict and choice[0] > _cfg("phase_measure_max_extra_days"):
             return
         extra, legs = choice
         key = (route, position, tuple(id(leg) for leg in legs))
@@ -873,6 +883,15 @@ class _State:
                 f"spacing {route.id}: first adjustment on day {day:.1f} "
                 f"(+{extra:.1f} days for one vessel)",
             )
+
+    def _light_vessel(self, vessel, route, position):
+        ratio = _cfg("phase_light_ratio")
+        if ratio <= 0.0:
+            return False
+        usual = self.depart_load.get((route, position))
+        if not usual:
+            return False
+        return _load(vessel) <= ratio * usual
 
     def _route_disturbed(self, info, start, end):
         if any(c.start < end and start < c.end for c in info.clusters):
@@ -990,6 +1009,9 @@ class _State:
                 key = (source, src_pos)
                 self.port_days[key] = _ema(self.port_days.get(key), duration, 0.2)
                 self.port_days_route[source] = _ema(self.port_days_route.get(source), duration, 0.05)
+            if src_pos is not None:
+                key = (source, (src_pos + 1) % self.info[source].n)
+                self.depart_load[key] = _ema(self.depart_load.get(key), _load(vessel), 0.1)
         next_segment = vessel.get_next_segment()
         leg = next_segment.associated_leg
         multiplier = getattr(leg, "sailing_time_multiplier", 1.0) or 1.0
@@ -1587,6 +1609,10 @@ def _vessel_speed(vessel, state):
     source = state.src_of(vessel.assigned_service_route)
     info = state.info.get(source)
     return info.speed if info is not None else 20.0
+
+
+def _load(vessel):
+    return sum(shipment.teu_size or 0 for shipment in vessel.carried_shipments)
 
 
 def _arrival_port(vessel):

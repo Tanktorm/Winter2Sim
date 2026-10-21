@@ -3,36 +3,46 @@
 Entrega: **23 de octubre de 2026**. Escenario oculto: pueden cambiar las disrupciones,
 la red, los puertos, los tramos, las rutas, la flota y la demanda.
 
-## 0. Estado actual: versión v2 (19 de octubre)
+## 0. Estado actual: versión v3 (20 de octubre)
 
-`r3_strategy.py` incluye ahora el **espaciado de buques**. El simulador suelta los
-buques de cada ruta cada 7 días sin importar la duración del ciclo, lo que deja
-salidas desparejas (en R2 hay huecos de 0.4 a 7 días en la misma ruta). Un buque que
-va pegado al anterior toma un camino un poco más largo hecho de tramos existentes
-hasta que los huecos se emparejan. Así la carga espera menos en origen y en los
-transbordos. Durante el calentamiento actúa libremente. En el período medido solo
-hace ajustes de hasta 2.5 días, uno por buque cada medio ciclo, y nunca en rutas con
-un cierre o una congestión a menos de un ciclo.
+`r3_strategy.py` incluye el **espaciado de buques**. El simulador suelta los buques de
+cada ruta cada 7 días sin importar la duración del ciclo, lo que deja salidas
+desparejas (en R2 hay huecos de 0.4 a 7 días en la misma ruta). Un buque que va pegado
+al anterior toma un camino un poco más largo hecho de tramos existentes hasta que los
+huecos se emparejan. Así la carga espera menos en origen y en los transbordos.
+
+**Qué cambió en v3.** En v2 el peor caso era h3 (cierre de 40 días de Tanger Med):
+loss +40.54. La causa: durante el cierre los buques esperan en el fondeadero y al
+reabrir salen todos juntos. En Rotterdam, 7 de los 8 buques de S1 salían en menos de
+un día; el primero llevaba 2,595 TEU y los otros entre 6 y 387. v2 solo podía mover
+cada buque 2.5 días cada medio ciclo, así que el grupo seguía junto el resto del año.
+v3 hace dos cambios:
+
+1. **Buques casi vacíos.** En el período medido, un buque que sale con a lo sumo la
+   mitad de la carga que suele llevar desde esa escala se espacia con los límites del
+   calentamiento (sin el tope de 2.5 días ni la espera de medio ciclo). Retrasarlo
+   cuesta poco porque lleva poca carga (`phase_light_ratio = 0.5`).
+2. **Vuelve a espaciar antes** después de un cierre o una congestión: 0.25 ciclos en
+   vez de 1 (`phase_guard_before_cycles = 0.25`).
 
 Medido en la nube con el mismo simulador (resultados idénticos a tu PC):
 
-| Escenario | `r3` original | **v2** | Alemanuel (trial 28) |
-|---|---|---|---|
-| Ronda 2, semilla 2026 | −15.94 | **−21.35** | 2.99 (generalizada) |
-| Ronda 2, semilla 2027 | −16.43 | **−27.60** | – |
-| Ronda 2, semilla 2028 | −16.86 | **−23.04** | – |
-| a1 tramos oceánicos | −30.30 | **−42.52** | −18.17 |
-| a2 cierre de Singapore | 11.27 | **−12.24** | 16.12 |
-| a3 flota escasa, demanda alta | −59.64 | **−93.90** | −30.76 |
-| a5 eventos solapados | −37.60 | **−44.71** | −19.03 |
-| a6 sin ruta S4 | −0.86 | **−10.63** | 10.49 |
-| a7 red renombrada y lenta | −44.42 | **−58.02** | 15.61 |
-| a8 choques cortos | −20.64 | **−21.35** | 7.40 |
-| h3 estrés (cierre de 40 días) | 48.05 | **40.54** | – |
-| **Score robusto (7 casos de Alemanuel)** | −8.68 | **−23.45** | 8.35 |
+| Escenario | `r3` original | v2 | **v3** | Alemanuel v6 (trial 9) |
+|---|---|---|---|---|
+| Ronda 2, semilla 2026 | −15.94 | −21.35 | **−28.61** | – |
+| Ronda 2, semilla 2027 | −16.43 | −27.60 | **−32.90** | – |
+| Ronda 2, semilla 2028 | −16.86 | −23.04 | en curso | – |
+| a1 tramos oceánicos | −30.30 | −42.52 | **−48.56** | −19.37 |
+| a2 cierre de Singapore | 11.27 | −12.24 | **−35.26** | 24.95 |
+| a3 flota escasa, demanda alta | −59.64 | −93.90 | **−108.86** | −25.40 |
+| a5 eventos solapados | −37.60 | −44.71 | **−58.59** | −13.64 |
+| a6 sin ruta S4 | −0.86 | −10.63 | **−26.62** | 4.80 |
+| a7 red renombrada y lenta | −44.42 | −58.02 | **−62.73** | −19.11 |
+| a8 choques cortos | −20.64 | −21.35 | **−29.22** | −10.08 |
+| h3 estrés (cierre de 40 días) | 48.05 | 40.54 | **−4.27** | – |
+| **Score robusto (7 casos de Alemanuel)** | −8.68 | −23.45 | **−37.08** | 5.71 |
 
-v2 gana en los 11 casos. La carga completada nunca baja más de 0.7% (y en varios
-casos sube). Se desactiva con `--set phase=0` para comparar.
+v3 gana en todos los casos ya medidos y completa más carga en todos. Para comparar con v2: `--set phase_light_ratio=0 --set phase_guard_before_cycles=1`.
 
 ## 1. La decisión
 
