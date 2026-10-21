@@ -58,6 +58,12 @@ Otros escenarios:
 | Ronda 2, semilla 2028 | −16.86 | −23.04 | **−34.41** |
 | h2: otra flota, menos muelles, demanda ×1.3 | – | −12.19 | **−26.58** |
 | h3: cierre de 40 días de Tanger Med | 48.05 | 40.54 | **−4.27** (default: 123.13) |
+| a1 desvíos oceánicos, semilla 2027 | – | −28.27 | **−34.67** |
+| a2 cierre de hub, semilla 2027 | – | +0.74 | **−35.16** |
+| a6 topología distinta, semilla 2027 | – | −5.48 | **−24.95** |
+
+Con la segunda semilla v3 repite lo de la primera; v2 no. En total v3 gana a v2 en
+las 15 combinaciones escenario-semilla medidas (promedio −39.43 contra −24.00).
 
 Qué cambió de v2 a v3: ver la sección 0 de `RONDA3.md`. En resumen, después de un
 cierre largo los buques de la ruta quedan amontonados; el primero lleva casi toda la
