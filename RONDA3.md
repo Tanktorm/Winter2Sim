@@ -13,8 +13,9 @@ huecos se emparejan. Así la carga espera menos en origen y en los transbordos.
 
 **Qué cambió en v3.** En v2 el peor caso era h3 (cierre de 40 días de Tanger Med):
 loss +40.54. La causa: durante el cierre los buques esperan en el fondeadero y al
-reabrir salen todos juntos. En Rotterdam, 7 de los 8 buques de S1 salían en menos de
-un día; el primero llevaba 2,595 TEU y los otros entre 6 y 387. v2 solo podía mover
+reabrir salen todos juntos. En Rotterdam, 7 de los 8 buques de S1 salieron en menos de
+dos días; hacia Tanger Med uno llevaba 4,284 TEU y los otros seis entre 6 y 135, y
+el octavo pasó 40 días después. v2 solo podía mover
 cada buque 2.5 días cada medio ciclo, así que el grupo seguía junto el resto del año.
 v3 hace dos cambios:
 
